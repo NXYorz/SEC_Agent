@@ -10,7 +10,6 @@ Author: NXY
 
 import numpy as np
 
-
 # Configuration
 # 配置，包含维度设置，算法参数设置，文件的最后一些配置是开悟平台使用不要改动
 class Config:
@@ -23,6 +22,7 @@ class Config:
         10,#怪物特征,是否可见，位置，速度，距离，dist_norm(两只怪物)
         8,#合法动作掩码(往哪里走更安全)
         16,#局部地图特征
+        2,#进度特征
     ]
     # Whether to use CNN networks
     # 是否使用CNN网络
@@ -32,9 +32,7 @@ class Config:
     FEATURE_VECTOR_SHAPE = FEATURES
     FEATURE_IMAGE_SHAPE = (4, VIEW_SIZE + 1, VIEW_SIZE + 1)
 
-    ACTION_SHAPE = (8,)
-    VALUE_SHAPE = (1,)
-    FEATURE_LEN = sum(FEATURE_SPLIT_SHAPE)
+    FEATURE_LEN = sum(FEATURE_VECTOR_SHAPE)
     DIM_OF_OBSERVATION = FEATURE_LEN
 
     # Discount factor GAMMA in RL
