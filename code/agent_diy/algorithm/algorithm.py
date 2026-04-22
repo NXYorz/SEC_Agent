@@ -6,7 +6,6 @@
 """
 Author: Tencent AI Arena Authors
 
-PPO algorithm implementation for Gorge Chase PPO.
 峡谷追猎 PPO 算法实现。
 
 损失组成：
@@ -43,8 +42,7 @@ class Algorithm:
         self.train_step = 0
 
     def learn(self, list_sample_data):
-        """Training entry: PPO update on a batch of SampleData.
-
+        """
         训练入口：对一批 SampleData 执行 PPO 更新。
         """
         obs = torch.stack([f.obs for f in list_sample_data]).to(self.device)
@@ -109,8 +107,7 @@ class Algorithm:
         reward_sum,
         reward,
     ):
-        """Compute standard PPO loss (policy + value + entropy).
-
+        """
         计算标准 PPO 损失（策略损失 + 价值损失 + 熵正则化）。
         """
         # Masked softmax / 合法动作掩码 softmax
@@ -148,8 +145,7 @@ class Algorithm:
         return total_loss, [value_loss, policy_loss, entropy_loss]
 
     def _masked_softmax(self, logits, legal_action):
-        """Softmax with legal action masking (suppress illegal actions).
-
+        """
         合法动作掩码下的 softmax（将非法动作概率压为极小值）。
         """
         label_max, _ = torch.max(logits * legal_action, dim=1, keepdim=True)

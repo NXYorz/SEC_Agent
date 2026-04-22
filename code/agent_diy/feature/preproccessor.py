@@ -169,8 +169,9 @@ class Preprocessor:
             else:
                 monster_feats.append(np.zeros(5, dtype=np.float32))
 
-        # Legal action mask (8D) / 合法动作掩码
-        legal_action = [1] * 8
+        # Legal action mask (16D) / 合法动作掩码
+        # TODO: 检查逻辑是否正确（important）
+        legal_action = [1] * 16
         if isinstance(legal_act_raw, list) and legal_act_raw:
             if isinstance(legal_act_raw[0], bool):
                 for j in range(min(8, len(legal_act_raw))):
@@ -181,6 +182,12 @@ class Preprocessor:
 
         if sum(legal_action) == 0:
             legal_action = [1] * 8
+
+        for i in range(9,17):
+            if flash_cooldown > 0:
+                legal_action[i] = 0
+            else:
+                legal_action[i] = legal_action[i - 8]
 
         # Local map features (16D) / 局部地图特征
         map_feat = np.zeros(16, dtype=np.float32)

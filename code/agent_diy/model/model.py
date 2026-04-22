@@ -77,12 +77,12 @@ class MLPBlock(nn.Module):
 class Model(nn.Module):
     """
     输入:
-        feature_vec: [B, 52]
+        feature_vec: [B, 60]
         feature_img: [B, 4, 51, 51]
 
     输出:
         value:  [B, 1]
-        logits: [B, 8]   (如果 softmax=True，则返回概率)
+        logits: [B, 16]   (如果 softmax=True，则返回概率)
     """
     def __init__(self, device=None, softmax=False):
         super().__init__()
@@ -90,26 +90,26 @@ class Model(nn.Module):
         # 基本配置
         self.model_name = "sec"
         #self.VIEW_SIZE = 50
-        self.FEATURES = [10, 6, 10, 8, 16, 2]
-        self.FEATURE_LEN = sum(self.FEATURES)  # 52
+        self.FEATURES = [10, 6, 10, 16, 16, 2]
+        self.FEATURE_LEN = sum(self.FEATURES)  # 60
         #self.IMAGE_SHAPE = (4, self.VIEW_SIZE + 1, self.VIEW_SIZE + 1)  # (4, 51, 51)
-        self.ACTION_NUM = 8
+        self.ACTION_NUM = 16
         self.VALUE_NUM = 1
         self.softmax = softmax
 
         self.device = device
 
         # 特征分段索引
-        # [10, 6, 10, 8, 16, 2]
+        # [10, 6, 10, 16, 16, 2]
         self.hero_start, self.hero_end = 0, 10
         self.box_start, self.box_end = 10, 16
         self.monster_start, self.monster_end = 16, 26
-        self.mask_start, self.mask_end = 26, 34
-        self.local_start, self.local_end = 34, 50
-        self.progress_start, self.progress_end = 50, 52
+        self.mask_start, self.mask_end = 26, 42
+        self.local_start, self.local_end = 42, 58
+        self.progress_start, self.progress_end = 58, 60
 
         # 图像分支 CNN
-        # 输入: [B, 4, 51, 51]
+        # 输入: [B, 4, 60, 60]
         # 输出: [B, 256]
         """
         self.image_encoder = nn.Sequential(
@@ -132,12 +132,12 @@ class Model(nn.Module):
         self.hero_encoder = MLPBlock(10, 32, 32, dropout=0.05)
         self.box_encoder = MLPBlock(6, 16, 16, dropout=0.05)
         self.monster_encoder = MLPBlock(10, 32, 32, dropout=0.05)
-        self.mask_encoder = MLPBlock(8, 16, 16, dropout=0.00)
+        self.mask_encoder = MLPBlock(16, 32, 32, dropout=0.00)
         self.local_encoder = MLPBlock(16, 32, 32, dropout=0.05)
         self.progress_encoder = MLPBlock(2, 8, 8, dropout=0.00)
 
         self.backbone = nn.Sequential(
-            nn.Linear(32 + 16 + 32 + 16 + 32 + 8, 128),
+            nn.Linear(32 + 16 + 32 + 32 + 32 + 8, 128),
             nn.LayerNorm(128),
             nn.SiLU(),
             nn.Dropout(0.10),
@@ -209,7 +209,7 @@ class Model(nn.Module):
 
     def encode_vector(self, feature_vec):
         """
-        feature_vec: [B, 52]
+        feature_vec: [B, 60]
         """
         hero_feat = self.hero_encoder(feature_vec[:, self.hero_start:self.hero_end])
         box_feat = self.box_encoder(feature_vec[:, self.box_start:self.box_end])
@@ -227,7 +227,7 @@ class Model(nn.Module):
     def forward(self, feature_vec, use_action_mask=True):
         """
         参数:
-            feature_vec: [B, 52] 或 [52]
+            feature_vec: [B, 60] 或 [60]
             use_action_mask: 是否对非法动作做mask
 
         返回:
@@ -242,19 +242,16 @@ class Model(nn.Module):
         # 图像分支
         #img_feat = self.image_encoder(feature_img)   # [B, 256]
 
-        # 向量分支
-        vec_feat = self.encode_vector(feature_vec)   # [B, 128]
-
         # 融合
         fused = self.encode_vector(feature_vec)
-
+        
         # 双头
-        logits = self.policy_head(fused)  # [B, 8]
+        logits = self.policy_head(fused)  # [B, 16]
         value = self.value_head(fused)    # [B, 1]
 
-        # 动作掩码：FEATURE 中第4段是 8 维合法动作掩码
+        # 动作掩码：FEATURE 中第4段是 16 维合法动作掩码
         if use_action_mask:
-            action_mask = feature_vec[:, self.mask_start:self.mask_end]  # [B, 8]
+            action_mask = feature_vec[:, self.mask_start:self.mask_end]  # [B, 16]
             valid = action_mask > 0.5
             logits = logits.masked_fill(~valid, -1e9)
 
@@ -262,7 +259,7 @@ class Model(nn.Module):
             policy = torch.softmax(logits, dim=-1)
             return value, policy
         else:
-            return value, logits
+            return logits , value
 
     def set_train_mode(self):
         self.train()

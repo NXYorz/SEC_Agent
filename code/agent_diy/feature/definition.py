@@ -45,7 +45,6 @@ SampleData = create_cls(
     advantages=1,  # 优势函数（标量）
     values=1,  # 价值函数（标量）
     dones=1,  # 是否结束（标量）
-    # 根据你的实际算法需求添加其他字段
 )
 
 #TODO
