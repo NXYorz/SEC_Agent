@@ -42,7 +42,7 @@ def get_area(x , z):
     return (int)(x / 8) , (int)(z / 8)
 
 def Dis(monster , hero):
-    return np.sqrt((monster["pos"]["x"]) - hero["pos"]["x"] ** 2 + (monster["pos"]["z"] - hero["pos"]["z"]) ** 2)
+    return np.sqrt((monster["pos"]["x"] - hero["pos"]["x"]) ** 2 + (monster["pos"]["z"] - hero["pos"]["z"]) ** 2)
 
 #危险返回True
 def check_monsterAndHero(monster , hero , env_info):
