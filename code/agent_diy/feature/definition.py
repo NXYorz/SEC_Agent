@@ -4,13 +4,14 @@
 # Copyright © 1998 - 2026 Tencent. All Rights Reserved.
 ###########################################################################
 """
-Author: Tencent AI Arena Authors
+Author: NXY
 """
 
 
 from common_python.utils.common_func import create_cls
 import numpy as np
 from agent_diy.conf.conf import Config
+from agent_diy.feature.preproccessor import Dis,_norm,MAP_SIZE
 
 # The create_cls function is used to dynamically create a class. The first parameter of the function is the type name,
 # and the remaining parameters are the attributes of the class, which should have a default value of None.
@@ -47,10 +48,55 @@ SampleData = create_cls(
     dones=1,  # 是否结束（标量）
 )
 
-#TODO
-def reward_shaping(frame_no, score, terminated, truncated, remain_info, _remain_info, obs, _obs):
-    pass
+SURVIVE_REWARD = 0.8
+TREASURE_REWARD = 1.0
+BOX_REWARD = 0.1
+MONSTER_REWARD = 0.5
+FAR_MONSTER_REWARD = 0.5
 
+
+last_box_score = 0
+last_survive_score = 0
+last_box_dis = 0
+last_mostMonster_dis = 0
+last_farMonster_dis = 0
+
+def reward_shaping(preprocessor , frame_no, hero, monsters , box , monster_feats , hero_feat , env):
+    cur_monst_dist_norm1 = monster_feats[0][4]
+    cur_monst_dist_norm2 = monster_feats[1][4]       
+    
+    reward = 0
+    #生存奖励
+    if(last_survive_score < env["step_score"]):
+        reward += SURVIVE_REWARD
+    last_survive_score = env["step_score"]
+
+    #宝箱奖励
+    if(last_box_score < env["treasure_score"]):
+        reward += TREASURE_REWARD
+    last_box_score = env["treasure_score"]
+
+    #宝箱接近奖励
+    cur_box_dist_norm = _norm(Dis(hero , box) , MAP_SIZE * 1.41)
+    if last_box_dis < cur_box_dist_norm:
+        reward += BOX_REWARD
+    last_box_dis = cur_box_dist_norm
+    
+    #怪物远离奖励
+    cur_monst_min_dis = min(cur_monst_dist_norm1 , cur_monst_dist_norm2)
+    if last_mostMonster_dis < cur_monst_min_dis:
+        reward += MONSTER_REWARD
+    else:
+        reward -= MONSTER_REWARD
+    last_mostMonster_dis = cur_monst_min_dis
+
+    #第二只怪物压力奖励
+    far_monster_dis = max(cur_monst_dist_norm1 , cur_monst_dist_norm2)
+    if last_farMonster_dis < far_monster_dis:
+        reward += FAR_MONSTER_REWARD
+    last_farMonster_dis = far_monster_dis
+
+    return reward
 
 def sample_process(list_sample_data):
     """Fill next_value and compute GAE advantage.

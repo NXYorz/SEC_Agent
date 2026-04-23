@@ -42,7 +42,7 @@ def get_area(x , z):
     return (int)(x / 8) , (int)(z / 8)
 
 def Dis(monster , hero):
-    return np.abs(monster["pos"]["x"]) - hero["pos"]["x"] + np.abs(monster["pos"]["z"] - hero["pos"]["z"])
+    return np.sqrt((monster["pos"]["x"]) - hero["pos"]["x"] ** 2 + (monster["pos"]["z"] - hero["pos"]["z"]) ** 2)
 
 #危险返回True
 def check_monsterAndHero(monster , hero , env_info):
@@ -221,8 +221,6 @@ class Preprocessor:
         )
 
         # Step reward / 即时奖励
-
-        #TODO: reward_shaping
-        reward = reward_shaping()
-
+        frame_no = frame_state["frame_no"]
+        reward = reward_shaping(self , frame_no, hero, monsters , box , monster_feats, hero_feat , env_info)
         return feature, legal_action, reward
