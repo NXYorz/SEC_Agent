@@ -1,19 +1,19 @@
 [env_conf]
 # Maps used for training. Customize by keeping only desired map IDs, e.g. [1, 2] for maps 1 and 2.
 # 训练使用的地图。可自定义选择期望用来训练的地图，如只期望使用1、2号地图训练数组内仅保留[1,2]即可。
-map = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+map = [1,  3, 5,  7,  9]
 
 # Whether to randomly select maps. true = randomly pick one from configured maps per episode, false = used sequentially.
 # 是否随机抽取地图。布尔值。true表示每局从配置的地图中随机抽取一张，false表示按顺序抽取地图训练。
-map_random = false
+map_random = true
 
 # Number of treasures. Range: 0~10. When less than 10, spawn points are randomly chosen from available positions.
 # 宝箱数量。可配置范围为0～10。当配置小于10时，将从每张地图可生成宝箱的点位随机选择对应数量的点位生成宝箱。
-treasure_count = 10
+treasure_count = 1
 
 # Number of speed buffs. Range: 0~2. When set to 1, one of the two buff positions is randomly chosen.
 # 加速buff数量。可配置范围为0～2。当配置为1时将从每张地图2个buff点位随机选择1个点位生成buff。
-buff_count = 2
+buff_count = 1
 
 # Speed buff respawn cooldown in steps after being picked up. Range: 1~500.
 # 加速buff刷新时间。拾取后重新生成buff时间，单位为步数。可配置范围1～500。
