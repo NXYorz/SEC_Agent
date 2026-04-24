@@ -20,7 +20,7 @@ import os
 import time
 
 import torch
-from agent_ppo.conf.conf import Config
+from agent_diy.conf.conf import Config
 
 
 class Algorithm:
@@ -46,13 +46,13 @@ class Algorithm:
         训练入口：对一批 SampleData 执行 PPO 更新。
         """
         obs = torch.stack([f.obs for f in list_sample_data]).to(self.device)
-        legal_action = torch.stack([f.legal_action for f in list_sample_data]).to(self.device)
-        act = torch.stack([f.act for f in list_sample_data]).to(self.device).view(-1, 1)
-        old_prob = torch.stack([f.prob for f in list_sample_data]).to(self.device)
+        legal_action = torch.stack([f.legal_actions for f in list_sample_data]).to(self.device)
+        act = torch.stack([f.actions for f in list_sample_data]).to(self.device).view(-1, 1)
+        old_prob = torch.stack([f.probs for f in list_sample_data]).to(self.device)
         reward = torch.stack([f.reward for f in list_sample_data]).to(self.device)
-        advantage = torch.stack([f.advantage for f in list_sample_data]).to(self.device)
-        old_value = torch.stack([f.value for f in list_sample_data]).to(self.device)
-        reward_sum = torch.stack([f.reward_sum for f in list_sample_data]).to(self.device)
+        advantage = torch.stack([f.advantages for f in list_sample_data]).to(self.device)
+        old_value = torch.stack([f.values for f in list_sample_data]).to(self.device)
+        reward_sum = torch.stack([f.rewards for f in list_sample_data]).to(self.device)
 
         self.model.set_train_mode()
         self.optimizer.zero_grad()

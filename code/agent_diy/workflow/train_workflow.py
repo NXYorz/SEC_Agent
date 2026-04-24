@@ -4,10 +4,11 @@
 # Copyright © 1998 - 2026 Tencent. All Rights Reserved.
 ###########################################################################
 """
-Author: Tencent AI Arena Authors
+Author: NXY
 """
-
-
+import os
+import time
+import logging
 import time
 from common_python.utils.common_func import Frame
 from agent_diy.feature.definition import (
@@ -17,7 +18,10 @@ from agent_diy.feature.definition import (
 from tools.train_env_conf_validate import read_usr_conf
 from tools.metrics_utils import get_training_metrics
 from common_python.utils.workflow_disaster_recovery import handle_disaster_recovery
+import numpy as np
+from agent_diy.feature.definition import SampleData
 
+logging.basicConfig(level=logging.DEBUG)  
 
 def workflow(envs, agents, logger=None, monitor=None, *args, **kwargs):
     last_save_model_time = time.time()
@@ -41,13 +45,15 @@ def workflow(envs, agents, logger=None, monitor=None, *args, **kwargs):
 
     while True:
         g_data = episode_runner.run_episodes()
-        agent.learn(g_data)
-        g_data.clear()
 
-        now = time.time()
-        if now - last_save_model_time >= 1800:
-            agent.save_model()
-            last_save_model_time = now
+        for g_data in episode_runner.run_episodes():
+            agent.send_sample_data(g_data)
+            g_data.clear()
+
+            now = time.time()
+            if now - last_save_model_time >= 1800:
+                agent.save_model()
+                last_save_model_time = now
 
     # At the start of each game, support loading the latest model file
     # 每次对局开始时, 支持加载最新model文件, 该调用会从远程的训练节点加载最新模型
@@ -95,6 +101,7 @@ class EpisodeRunner:
             self.agent.load_model(id="latest")
 
             # Initial observation / 初始观测处理
+            self.logger.info(f"[NXY DEBUG]env_obs = :{env_obs}")
             obs_data, remain_info = self.agent.observation_process(env_obs)
 
             collector = []
@@ -107,7 +114,10 @@ class EpisodeRunner:
 
             while not done:
                 # Predict action / Agent 推理（随机采样）
-                act_data = self.agent.predict(list_obs_data=[obs_data])[0]
+                self.logger.info(f"[NXY DEBUG]:[obs_data] = {[obs_data]}")
+                tmp = self.agent.predict(list_obs_data=[obs_data])
+                self.logger.info(f"[NXY DEBUG--]:tmp = {tmp}")
+                act_data = tmp[0]
                 act = self.agent.action_process(act_data)
 
                 # Step env / 与环境交互
@@ -127,7 +137,7 @@ class EpisodeRunner:
 
                 # Step reward / 每步即时奖励
                 reward = np.array(_remain_info.get("reward", [0.0]), dtype=np.float32)
-                total_reward += float(reward[0])
+                total_reward += float(reward)
 
                 # Terminal reward / 终局奖励
                 final_reward = np.zeros(1, dtype=np.float32)
@@ -147,19 +157,19 @@ class EpisodeRunner:
                         f"result:{result_str} sim_score:{total_score:.1f} "
                         f"total_reward:{total_reward:.3f}"
                     )
-
+                total_reward += float(final_reward)
                 # Build sample frame / 构造样本帧
                 frame = SampleData(
                     obs=np.array(obs_data.feature, dtype=np.float32),
-                    legal_action=np.array(obs_data.legal_action, dtype=np.float32),
-                    act=np.array([act_data.action[0]], dtype=np.float32),
+                    legal_actions=np.array(obs_data.legal_action, dtype=np.float32),
+                    actions=np.array([act_data.action[0]], dtype=np.float32),
                     reward=reward,
-                    done=np.array([float(done)], dtype=np.float32),
-                    reward_sum=np.zeros(1, dtype=np.float32),
-                    value=np.array(act_data.value, dtype=np.float32).flatten()[:1],
+                    rewards=total_reward,
+                    dones=np.array([float(done)], dtype=np.float32),
+                    values=np.array(act_data.value, dtype=np.float32).flatten()[:1],
+                    advantages=np.zeros(1, dtype=np.float32),
                     next_value=np.zeros(1, dtype=np.float32),
-                    advantage=np.zeros(1, dtype=np.float32),
-                    prob=np.array(act_data.prob, dtype=np.float32),
+                    probs=np.array(act_data.prob, dtype=np.float32),
                 )
                 collector.append(frame)
 

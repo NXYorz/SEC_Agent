@@ -8,10 +8,16 @@ Author: NXY
 """
 
 import torch
+torch.set_num_threads(1)
+torch.set_num_interop_threads(1)
 from kaiwudrl.interface.agent import BaseAgent
 from agent_diy.model.model import Model
 from agent_diy.conf.conf import Config
 from agent_diy.feature.preprocessor import Preprocessor
+from agent_diy.algorithm.algorithm import Algorithm
+from agent_diy.feature.definition import ActData, ObsData
+import random
+import numpy as np
 
 class Agent(BaseAgent):
     def __init__(self, agent_type="player", device=None, logger=None, monitor=None):
@@ -57,8 +63,11 @@ class Agent(BaseAgent):
 
     def predict(self, list_obs_data):
         #NXY:其实也可以直接list_obs_data[0]，因为输入是形如[obs_data]这样的
+        self.logger.info(f"[NXY DEBUG2]:lst_obs_data =  {list_obs_data}")
+        self.logger.info(f"[NXY DEBUG2]: len(list_obs_data) = {len(list_obs_data)}")
         res = []
         for i in range(len(list_obs_data)):
+            self.logger.info(f"[NXY DEBUG3]: entry loop successfully")
             feature = list_obs_data[i].feature
             legal_action = list_obs_data[i].legal_action
 
@@ -136,7 +145,7 @@ class Agent(BaseAgent):
         obs_tensor = torch.tensor(np.array([feature]), dtype=torch.float32).to(self.device)
 
         with torch.no_grad():
-            logits, value = self.model(obs_tensor, inference=True)
+            logits, value = self.model(obs_tensor)
 
         logits_np = logits.cpu().numpy()[0]
         value_np = value.cpu().numpy()[0]
