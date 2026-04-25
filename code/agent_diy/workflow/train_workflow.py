@@ -177,7 +177,7 @@ class EpisodeRunner:
                     now = time.time()
                     if now - self.last_report_monitor_time >= 60 and self.monitor:
                         monitor_data = {
-                            "reward": round(total_reward + float(final_reward[0]), 4),
+                            "reward": round(total_reward, 4),
                             "episode_steps": step,
                             "episode_cnt": self.episode_cnt,
                         }

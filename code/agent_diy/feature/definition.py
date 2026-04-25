@@ -65,6 +65,7 @@ IDLE_PENALTY = -0.08
 CYCLE_PENALTY = -0.10
 EARLY_FLASH_PENALTY = -0.2
 UNSTUCK_REWARD = 0.0
+SCORE_GAIN_REWARD = 0.06
 
 def Dis(monster , hero):
     if len(monster) == 0:
@@ -82,8 +83,12 @@ def _norm(v, v_max, v_min=0.0):
 
 
 def reward_shaping(preprocessor , frame_no, hero, monsters , box , monster_feats , hero_feat , env):
-    cur_monst_dist_norm1 = monster_feats[0][4]
-    cur_monst_dist_norm2 = monster_feats[1][4]       
+    # 仅统计“可见怪物”的距离，避免无怪物时被错误判定为“怪物贴脸”。
+    visible_monster_dist = [float(mf[4]) for mf in monster_feats if float(mf[0]) > 0.5]
+    if len(visible_monster_dist) == 0:
+        cur_monst_min_dis = 1.0
+    else:
+        cur_monst_min_dis = min(visible_monster_dist)
 
     reward = 0.0
     rs = preprocessor.reward_state
@@ -98,6 +103,14 @@ def reward_shaping(preprocessor , frame_no, hero, monsters , box , monster_feats
         reward += TREASURE_REWARD
     rs["last_box_score"] = env["treasure_score"]
 
+    # 让训练目标与监控总分同向：总分上涨就给正奖励。
+    cur_total_score = float(env.get("total_score", 0.0))
+    last_total_score = float(rs.get("last_total_score", 0.0))
+    delta_total_score = cur_total_score - last_total_score
+    if delta_total_score > 0:
+        reward += SCORE_GAIN_REWARD * delta_total_score
+    rs["last_total_score"] = cur_total_score
+
     # 宝箱距离 shaping：接近加分，远离扣分（修复原先符号方向）
     if len(box) != 0:
         cur_box_dist_norm = _norm(Dis(box , hero) , MAP_SIZE * 1.41)
@@ -108,7 +121,6 @@ def reward_shaping(preprocessor , frame_no, hero, monsters , box , monster_feats
         rs["last_box_dist_norm"] = cur_box_dist_norm
 
     # 危险规避 shaping：近距离怪物时鼓励拉开，过近则直接惩罚
-    cur_monst_min_dis = min(cur_monst_dist_norm1 , cur_monst_dist_norm2)
     if cur_monst_min_dis < 0.20:
         reward += MONSTER_TOO_CLOSE_PENALTY
     elif cur_monst_min_dis > rs["last_min_monster_dist_norm"]:
