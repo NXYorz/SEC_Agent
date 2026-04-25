@@ -66,6 +66,8 @@ CYCLE_PENALTY = -0.10
 EARLY_FLASH_PENALTY = -0.2
 UNSTUCK_REWARD = 0.0
 SCORE_GAIN_REWARD = 0.06
+EDGE_STICK_PENALTY = -0.10
+DANGER_ESCAPE_BONUS = 0.20
 
 def Dis(monster , hero):
     if len(monster) == 0:
@@ -125,6 +127,8 @@ def reward_shaping(preprocessor , frame_no, hero, monsters , box , monster_feats
         reward += MONSTER_TOO_CLOSE_PENALTY
     elif cur_monst_min_dis > rs["last_min_monster_dist_norm"]:
         reward += MONSTER_ESCAPE_REWARD * (cur_monst_min_dis - rs["last_min_monster_dist_norm"])
+        if hero_feat[8] > 0.5:
+            reward += DANGER_ESCAPE_BONUS * (cur_monst_min_dis - rs["last_min_monster_dist_norm"])
     elif cur_monst_min_dis < rs["last_min_monster_dist_norm"] and cur_monst_min_dis < 0.35:
         reward += MONSTER_APPROACH_PENALTY * (rs["last_min_monster_dist_norm"] - cur_monst_min_dis)
     rs["last_min_monster_dist_norm"] = cur_monst_min_dis
@@ -136,6 +140,17 @@ def reward_shaping(preprocessor , frame_no, hero, monsters , box , monster_feats
         reward += IDLE_PENALTY
     if is_cycle > 0.5:
         reward += CYCLE_PENALTY
+
+    # 边缘惩罚：非危险状态下贴边/顶角停滞会被扣分，推动尽快回到中部可机动区域。
+    edge_dist = min(
+        float(hero["pos"]["x"]),
+        float(hero["pos"]["z"]),
+        MAP_SIZE - float(hero["pos"]["x"]),
+        MAP_SIZE - float(hero["pos"]["z"]),
+    )
+    edge_dist_norm = _norm(edge_dist, MAP_SIZE * 0.5)
+    if edge_dist_norm < 0.14 and hero_feat[8] <= 0.5:
+        reward += EDGE_STICK_PENALTY * (0.14 - edge_dist_norm) / 0.14
     # 从停滞/绕圈恢复时给予小额正反馈，帮助学习“及时换向”
     if rs.get("last_is_stop", 0.0) > 0.5 and is_stop <= 0.5:
         reward += UNSTUCK_REWARD

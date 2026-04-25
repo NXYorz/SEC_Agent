@@ -94,6 +94,47 @@ def _to_mask16(raw):
     return move + [0] * 8
 
 
+def _is_block_cell(map_info, row, col):
+    if map_info is None:
+        return False
+    if row < 0 or col < 0 or row >= len(map_info) or col >= len(map_info[0]):
+        return True
+    return float(map_info[row][col]) != 0.0
+
+
+def _refine_move_mask_with_local_map(move_mask, map_info):
+    """Use local map obstacle info to suppress likely blocked directions."""
+    if map_info is None or len(map_info) < 3 or len(map_info[0]) < 3:
+        return move_mask
+
+    center_r = len(map_info) // 2
+    center_c = len(map_info[0]) // 2
+
+    # 方向与 _vector_to_dir 保持一致：0:+x, 2:+z, 4:-x, 6:-z。
+    dir_offsets = {
+        0: (0, 1),
+        1: (-1, 1),
+        2: (-1, 0),
+        3: (-1, -1),
+        4: (0, -1),
+        5: (1, -1),
+        6: (1, 0),
+        7: (1, 1),
+    }
+
+    refined = list(move_mask)
+    for d in range(8):
+        if refined[d] <= 0:
+            continue
+        dr, dc = dir_offsets[d]
+        near_blocked = _is_block_cell(map_info, center_r + dr, center_c + dc)
+        far_blocked = _is_block_cell(map_info, center_r + 2 * dr, center_c + 2 * dc)
+        # 近格和远格都不可达时直接禁用，减少“撞墙硬顶”。
+        if near_blocked and far_blocked:
+            refined[d] = 0
+    return refined
+
+
 
 def _norm(v, v_max, v_min=0.0):
     """Normalize value to [0, 1].
@@ -297,6 +338,8 @@ class Preprocessor:
 
         # Legal action mask (16D) / 合法动作掩码
         legal_action = _to_mask16(legal_act_raw)
+        move_mask = _refine_move_mask_with_local_map(legal_action[:8], map_info)
+        legal_action[:8] = move_mask
 
         if sum(legal_action[:8]) == 0:
             # 防止“全非法 -> 全动作放开”导致频繁采样到无效闪现，改为仅放开移动动作。

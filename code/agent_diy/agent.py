@@ -70,6 +70,7 @@ class Agent(BaseAgent):
             logits, value, prob = self._run_model(feature, legal_action)
             # 训练阶段保持“采样分布 == 学习分布”，避免 PPO 比率失真导致难以收敛。
             prob = self._normalize_probs(np.array(prob, dtype=np.float32))
+            prob = self._apply_action_heuristics(prob, feature, legal_action)
 
             action = self._legal_sample(prob, use_max=False)
             d_action = self._legal_sample(prob, use_max=True)
@@ -197,6 +198,7 @@ class Agent(BaseAgent):
         is_danger = f[8] > 0.5
         box_alive = f[10] > 0.5
         box_dir = int(f[11]) if f[11] >= 0 else -1
+        hx, hz = f[0], f[1]
 
         # 卡脚时，提高普通移动动作占比，并降低闪现动作占比（除非处于危险）。
         if is_stop or is_cycle:
@@ -217,6 +219,13 @@ class Agent(BaseAgent):
         # 安全状态下，若有宝箱则优先朝宝箱方向移动，减少“无意义游走”。
         if (not is_danger) and box_alive and 0 <= box_dir < 8 and legal[box_dir] > 0.5:
             prob[box_dir] *= 1.8
+
+        # 非危险时，轻微朝地图中心回拉，减少贴边绕圈/顶墙。
+        if not is_danger:
+            center_pull_dir = self._vector_to_dir(0.5 - hx, 0.5 - hz)
+            if legal[center_pull_dir] > 0.5:
+                edge_level = max(0.0, 0.20 - min(hx, hz, 1.0 - hx, 1.0 - hz)) / 0.20
+                prob[center_pull_dir] *= (1.0 + 1.5 * edge_level)
 
         # 强危险时，基于最近怪物方向进行“规避引导”。
         if is_danger:
@@ -244,6 +253,24 @@ class Agent(BaseAgent):
                 # 高危时适度提高闪现逃生动作权重（对应移动方向 +8）。
                 if min(near_m1, near_m2) < 0.18 and legal[escape_dir + 8] > 0.5:
                     prob[escape_dir + 8] *= 1.45
+
+        # 基于局部地图可行域做后处理，进一步压低“朝障碍方向”动作。
+        map_start = 42
+        if f.size >= map_start + 16:
+            local_map = f[map_start : map_start + 16].reshape(4, 4)
+            block_score = {
+                0: float(local_map[1, 3] + local_map[2, 3]),
+                1: float(local_map[0, 3] + local_map[1, 3]),
+                2: float(local_map[0, 1] + local_map[0, 2]),
+                3: float(local_map[0, 0] + local_map[0, 1]),
+                4: float(local_map[1, 0] + local_map[2, 0]),
+                5: float(local_map[2, 0] + local_map[3, 0]),
+                6: float(local_map[3, 1] + local_map[3, 2]),
+                7: float(local_map[2, 3] + local_map[3, 3]),
+            }
+            for d in range(8):
+                if legal[d] > 0.5:
+                    prob[d] *= (1.0 - 0.22 * min(2.0, block_score[d]))
 
         prob = prob * legal
         s = float(prob.sum())
