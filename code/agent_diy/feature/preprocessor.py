@@ -25,6 +25,68 @@ MAX_FLASH_CD = 2000.0
 MAX_BUFF_DURATION = 50.0
 
 
+def _to_mask8(raw):
+    """Convert diverse legal-action payloads to 8D move mask."""
+    mask = None
+    if isinstance(raw, (list, tuple, np.ndarray)):
+        data = list(raw)
+        if len(data) >= 8 and all(isinstance(x, (bool, int, np.bool_, np.integer)) for x in data[:8]):
+            # bool/int mask
+            if all(int(x) in (0, 1) for x in data[:8]):
+                mask = [int(x) for x in data[:8]]
+            else:
+                # index list
+                valid = {int(x) for x in data if 0 <= int(x) < 8}
+                mask = [1 if i in valid else 0 for i in range(8)]
+        elif len(data) > 0 and isinstance(data[0], (list, tuple, np.ndarray)):
+            return _to_mask8(data[0])
+
+    if isinstance(raw, dict):
+        for key in ("move_dir", "move", "move_action", "direction", "legal_move"):
+            if key in raw:
+                return _to_mask8(raw[key])
+
+    return mask if mask is not None else [1] * 8
+
+
+def _to_mask16(raw):
+    """Convert legal-action payloads to 16D mask: [move8, flash8]."""
+    if isinstance(raw, (list, tuple, np.ndarray)):
+        data = list(raw)
+        if (
+            len(data) >= 16
+            and all(isinstance(x, (bool, int, np.bool_, np.integer)) for x in data[:16])
+            and all(int(x) in (0, 1) for x in data[:16])
+        ):
+            return [int(x) for x in data[:16]]
+
+        if len(data) >= 2 and isinstance(data[0], (list, tuple, np.ndarray)) and isinstance(
+            data[1], (list, tuple, np.ndarray)
+        ):
+            move = _to_mask8(data[0])
+            flash = _to_mask8(data[1])
+            return move + flash
+
+    if isinstance(raw, dict):
+        move = None
+        flash = None
+        for key in ("move_dir", "move", "move_action", "direction", "legal_move"):
+            if key in raw:
+                move = _to_mask8(raw[key])
+                break
+        for key in ("flash_dir", "flash", "flash_action", "legal_flash"):
+            if key in raw:
+                flash = _to_mask8(raw[key])
+                break
+        if move is not None or flash is not None:
+            move = move if move is not None else [1] * 8
+            flash = flash if flash is not None else move.copy()
+            return move + flash
+
+    move = _to_mask8(raw)
+    return move + move.copy()
+
+
 
 def _norm(v, v_max, v_min=0.0):
     """Normalize value to [0, 1].
@@ -153,12 +215,12 @@ class Preprocessor:
         hero_pos = hero["pos"]
         hero_x_norm = _norm(hero_pos["x"], MAP_SIZE)
         hero_z_norm = _norm(hero_pos["z"], MAP_SIZE)
-        flash_ready = 0
-        if hero["flash_cooldown"] > 0:
-            flash_ready = 1
+        # flash_ready=1 表示“可用”，避免语义与字段名相反。
+        flash_ready = 1.0 if float(hero.get("flash_cooldown", 0.0)) <= 0.0 else 0.0
         buff_remain_norm = _norm(env_info["buff_refresh_time"], MAX_BUFF_DURATION)
-        score = env_info["total_score"]
-        frame_id = env_info["step_no"]
+        # 分数/步数做归一化，避免大数值特征压制其它输入。
+        score = np.tanh(float(env_info.get("total_score", 0.0)) / 100.0)
+        frame_id = _norm(env_info.get("step_no", 0), self.max_step)
         isStop = 0
         if hero_pos["x"] == self.last_x and hero_pos["z"] == self.last_z:
             isStop = 1
@@ -173,7 +235,7 @@ class Preprocessor:
             self.last_area_x = area_x
             self.last_area_z = area_z
         isCycle = 0
-        if self.cycleStep > 20:
+        if self.cycleStep > 8:
             isCycle = 1
         isDanger = check_monstersAndhero(frame_state.get("monsters", []) , hero , env_info)
         isGredy = Greddy(isDanger , frame_state.get("monsters", []) , frame_state.get("organs", []))
@@ -191,10 +253,10 @@ class Preprocessor:
             box = frame_state.get("organs", [])[0]
             isEffect = box["status"]
             direction = box["hero_relative_direction"]
-            dis = Dis(box , hero)
+            dis = _norm(Dis(box , hero), MAP_SIZE * 1.41)
             isBoxDanger = check_box(box , frame_state.get("monsters", []))
-            box_x = box["pos"]["x"]
-            box_z = box["pos"]["z"]
+            box_x = _norm(box["pos"]["x"], MAP_SIZE)
+            box_z = _norm(box["pos"]["z"], MAP_SIZE)
         box_feat = np.array([isEffect , direction , dis , isBoxDanger , box_x , box_z] , dtype=np.float32)
 
         # Monster features (5D x 2) / 怪物特征
@@ -225,15 +287,7 @@ class Preprocessor:
                 monster_feats.append(np.zeros(5, dtype=np.float32))
 
         # Legal action mask (16D) / 合法动作掩码
-        legal_action = [1] * 16
-        if isinstance(legal_act_raw, list) and legal_act_raw:
-            if isinstance(legal_act_raw[0], bool):
-                for j in range(min(8, len(legal_act_raw))):
-                    legal_action[j] = int(legal_act_raw[j])
-            else:
-                valid_set = {int(a) for a in legal_act_raw if int(a) < 8}
-                for j in range(8):
-                    legal_action[j] = 1 if j in valid_set else 0
+        legal_action = _to_mask16(legal_act_raw)
 
         if sum(legal_action[:8]) == 0:
             legal_action = [1] * 16
@@ -241,7 +295,7 @@ class Preprocessor:
         for i in range(8,16):
             if flash_cooldown > 0:
                 legal_action[i] = 0
-            else:
+            elif legal_action[i] not in (0, 1):
                 legal_action[i] = legal_action[i - 8]
 
         # Local map features (16D) / 局部地图特征
