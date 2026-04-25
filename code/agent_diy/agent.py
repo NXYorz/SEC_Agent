@@ -62,16 +62,13 @@ class Agent(BaseAgent):
         return obs_data, remain_info
 
     def predict(self, list_obs_data):
-        #NXY:其实也可以直接list_obs_data[0]，因为输入是形如[obs_data]这样的
-        self.logger.info(f"[NXY DEBUG2]:lst_obs_data =  {list_obs_data}")
-        self.logger.info(f"[NXY DEBUG2]: len(list_obs_data) = {len(list_obs_data)}")
         res = []
         for i in range(len(list_obs_data)):
-            self.logger.info(f"[NXY DEBUG3]: entry loop successfully")
             feature = list_obs_data[i].feature
             legal_action = list_obs_data[i].legal_action
 
             logits, value, prob = self._run_model(feature, legal_action)
+            prob = self._apply_action_heuristics(np.array(prob, dtype=np.float32), feature, legal_action)
 
             action = self._legal_sample(prob, use_max=False)
             d_action = self._legal_sample(prob, use_max=True)
@@ -171,6 +168,85 @@ class Agent(BaseAgent):
         """
         按概率分布采样动作。
         """
+        probs = self._normalize_probs(probs)
         if use_max:
             return int(np.argmax(probs))
         return int(np.argmax(np.random.multinomial(1, probs, size=1)))
+
+    def _apply_action_heuristics(self, prob, feature, legal_action):
+        """
+        轻量规则后处理：减少原地打转/卡脚，并在安全时提升吃箱倾向。
+        """
+        legal = np.array(legal_action, dtype=np.float32)
+        f = np.array(feature, dtype=np.float32)
+        is_stop = f[6] > 0.5
+        is_cycle = f[7] > 0.5
+        is_danger = f[8] > 0.5
+        box_alive = f[10] > 0.5
+        box_dir = int(f[11]) if f[11] >= 0 else -1
+
+        # 卡脚时，提高普通移动动作占比，并降低闪现动作占比（除非处于危险）。
+        if is_stop or is_cycle:
+            prob[0:8] *= 1.35
+            if not is_danger:
+                prob[8:16] *= 0.35
+
+            if 0 <= self.last_action < 8:
+                opp = (self.last_action + 4) % 8
+                prob[self.last_action] *= 0.35
+                prob[opp] *= 0.35
+
+        # 安全状态下，若有宝箱则优先朝宝箱方向移动，减少“无意义游走”。
+        if (not is_danger) and box_alive and 0 <= box_dir < 8 and legal[box_dir] > 0.5:
+            prob[box_dir] *= 1.8
+
+        # 强危险时，减少朝最近危险方向硬冲的概率（8方向假设）。
+        if is_danger:
+            near_m1 = f[20]
+            near_m2 = f[25]
+            if min(near_m1, near_m2) < 0.18 and 0 <= box_dir < 8:
+                prob[box_dir] *= 0.55
+                prob[(box_dir + 4) % 8] *= 1.3
+
+        prob = prob * legal
+        s = float(prob.sum())
+        if s <= 1e-8:
+            valid = np.where(legal > 0.5)[0]
+            if len(valid) == 0:
+                return np.ones_like(prob) / len(prob)
+            prob = np.zeros_like(prob)
+            prob[valid] = 1.0 / len(valid)
+            return prob
+        return self._normalize_probs(prob)
+
+    def _normalize_probs(self, probs):
+        """
+        将概率向量稳定归一化到有效分布，避免 multinomial 因浮点误差报错。
+        """
+        p = np.asarray(probs, dtype=np.float64).reshape(-1)
+        if p.size == 0:
+            return p
+
+        p = np.nan_to_num(p, nan=0.0, posinf=0.0, neginf=0.0)
+        p = np.clip(p, 0.0, None)
+
+        s = float(p.sum())
+        if s <= 0.0:
+            p = np.ones_like(p, dtype=np.float64) / float(p.size)
+            return p.astype(np.float32)
+
+        p = p / s
+
+        # 再次归一，确保 float64 检查时前 n-1 项和不会因舍入超过 1。
+        p = p / float(p.sum())
+        if p.size > 1:
+            tail = 1.0 - float(p[:-1].sum(dtype=np.float64))
+            p[-1] = np.clip(tail, 0.0, 1.0)
+
+        s2 = float(p.sum(dtype=np.float64))
+        if s2 <= 0.0:
+            p = np.ones_like(p, dtype=np.float64) / float(p.size)
+        else:
+            p = p / s2
+
+        return p.astype(np.float32)

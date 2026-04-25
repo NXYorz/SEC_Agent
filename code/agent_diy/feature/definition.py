@@ -52,18 +52,17 @@ SampleData = create_cls(
 # Map size / 地图尺寸（128×128）
 MAP_SIZE = 128.0
 
-SURVIVE_REWARD = 0.8
-TREASURE_REWARD = 1.0
-BOX_REWARD = 0.1
-MONSTER_REWARD = 0.5
-FAR_MONSTER_REWARD = 0.5
-
-
-last_box_score = 0
-last_survive_score = 0
-last_box_dis = 0
-last_mostMonster_dis = 0
-last_farMonster_dis = 0
+# Reward coefficients
+# 奖励权重：降低“苟活”收益，增强“找箱子并拿到箱子”的收益
+SURVIVE_REWARD = 0.10
+TREASURE_REWARD = 3.0
+BOX_APPROACH_REWARD = 0.8
+BOX_LEAVE_PENALTY = -0.2
+MONSTER_ESCAPE_REWARD = 0.2
+MONSTER_TOO_CLOSE_PENALTY = -0.4
+IDLE_PENALTY = -0.12
+CYCLE_PENALTY = -0.18
+EARLY_FLASH_PENALTY = -0.2
 
 def Dis(monster , hero):
     if len(monster) == 0:
@@ -83,42 +82,52 @@ def _norm(v, v_max, v_min=0.0):
 def reward_shaping(preprocessor , frame_no, hero, monsters , box , monster_feats , hero_feat , env):
     cur_monst_dist_norm1 = monster_feats[0][4]
     cur_monst_dist_norm2 = monster_feats[1][4]       
-    
-    reward = 0
-    #生存奖励
-    global last_survive_score
-    if(last_survive_score < env["step_score"]):
+
+    reward = 0.0
+    rs = preprocessor.reward_state
+
+    # 生存奖励：保留，但显著降低，避免学到“原地苟步数”
+    if rs["last_survive_score"] < env["step_score"]:
         reward += SURVIVE_REWARD
-    last_survive_score = env["step_score"]
+    rs["last_survive_score"] = env["step_score"]
 
-    #宝箱奖励
-    global last_box_score
-    if(last_box_score < env["treasure_score"]):
+    # 宝箱奖励：主目标，显著提高
+    if rs["last_box_score"] < env["treasure_score"]:
         reward += TREASURE_REWARD
-    last_box_score = env["treasure_score"]
+    rs["last_box_score"] = env["treasure_score"]
 
-    #宝箱接近奖励
-    global last_box_dis
-    cur_box_dist_norm = _norm(Dis(box , hero) , MAP_SIZE * 1.41)
-    if last_box_dis < cur_box_dist_norm:
-        reward += BOX_REWARD
-    last_box_dis = cur_box_dist_norm
-    
-    #怪物远离奖励
+    # 宝箱距离 shaping：接近加分，远离扣分（修复原先符号方向）
+    if len(box) != 0:
+        cur_box_dist_norm = _norm(Dis(box , hero) , MAP_SIZE * 1.41)
+        if cur_box_dist_norm < rs["last_box_dist_norm"]:
+            reward += BOX_APPROACH_REWARD * (rs["last_box_dist_norm"] - cur_box_dist_norm)
+        else:
+            reward += BOX_LEAVE_PENALTY * min(0.3, cur_box_dist_norm - rs["last_box_dist_norm"])
+        rs["last_box_dist_norm"] = cur_box_dist_norm
+
+    # 危险规避 shaping：近距离怪物时鼓励拉开，过近则直接惩罚
     cur_monst_min_dis = min(cur_monst_dist_norm1 , cur_monst_dist_norm2)
-    global last_mostMonster_dis
-    if last_mostMonster_dis < cur_monst_min_dis:
-        reward += MONSTER_REWARD
-    else:
-        reward -= MONSTER_REWARD  
-    last_mostMonster_dis = cur_monst_min_dis
+    if cur_monst_min_dis < 0.16:
+        reward += MONSTER_TOO_CLOSE_PENALTY
+    elif cur_monst_min_dis > rs["last_min_monster_dist_norm"]:
+        reward += MONSTER_ESCAPE_REWARD * (cur_monst_min_dis - rs["last_min_monster_dist_norm"])
+    rs["last_min_monster_dist_norm"] = cur_monst_min_dis
 
-    #第二只怪物压力奖励
-    far_monster_dis = max(cur_monst_dist_norm1 , cur_monst_dist_norm2)
-    global last_farMonster_dis
-    if last_farMonster_dis < far_monster_dis:
-        reward += FAR_MONSTER_REWARD
-    last_farMonster_dis = far_monster_dis
+    # 反“打转摆烂”：停滞与循环区域惩罚
+    is_stop = hero_feat[6]
+    is_cycle = hero_feat[7]
+    if is_stop > 0.5:
+        reward += IDLE_PENALTY
+    if is_cycle > 0.5:
+        reward += CYCLE_PENALTY
+
+    # 闪现误用惩罚：开局/非危险状态滥用闪现扣分
+    now_flash_cd = hero["flash_cooldown"]
+    last_flash_cd = rs["last_flash_cooldown"]
+    is_danger = hero_feat[8] > 0.5
+    if now_flash_cd > last_flash_cd and not is_danger and frame_no < 60:
+        reward += EARLY_FLASH_PENALTY
+    rs["last_flash_cooldown"] = now_flash_cd
 
     return reward
 
@@ -143,7 +152,10 @@ def _calc_gae(list_sample_data):
     gamma = Config.GAMMA
     lamda = Config.LAMDA
     for sample in reversed(list_sample_data):
-        delta = -sample.values + sample.reward + gamma * sample.next_value
+        done = float(sample.dones[0]) if hasattr(sample, "dones") else 0.0
+        not_done = 1.0 - done
+        delta = -sample.values + sample.reward + gamma * sample.next_value * not_done
         gae = gae * gamma * lamda + delta
-        sample.advantage = gae
-        sample.reward_sum = gae + sample.values
+        # Keep field names aligned with SampleData definitions used by learner.
+        sample.advantages = gae.astype(np.float32)
+        sample.rewards = (gae + sample.values).astype(np.float32)
