@@ -152,7 +152,10 @@ def _calc_gae(list_sample_data):
     gamma = Config.GAMMA
     lamda = Config.LAMDA
     for sample in reversed(list_sample_data):
-        delta = -sample.values + sample.reward + gamma * sample.next_value
+        done = float(sample.dones[0]) if hasattr(sample, "dones") else 0.0
+        not_done = 1.0 - done
+        delta = -sample.values + sample.reward + gamma * sample.next_value * not_done
         gae = gae * gamma * lamda + delta
-        sample.advantage = gae
-        sample.reward_sum = gae + sample.values
+        # Keep field names aligned with SampleData definitions used by learner.
+        sample.advantages = gae.astype(np.float32)
+        sample.rewards = (gae + sample.values).astype(np.float32)

@@ -44,8 +44,6 @@ def workflow(envs, agents, logger=None, monitor=None, *args, **kwargs):
     )
 
     while True:
-        g_data = episode_runner.run_episodes()
-
         for g_data in episode_runner.run_episodes():
             agent.send_sample_data(g_data)
             g_data.clear()
@@ -101,7 +99,6 @@ class EpisodeRunner:
             self.agent.load_model(id="latest")
 
             # Initial observation / 初始观测处理
-            self.logger.info(f"[NXY DEBUG]env_obs = :{env_obs}")
             obs_data, remain_info = self.agent.observation_process(env_obs)
 
             collector = []
@@ -114,9 +111,7 @@ class EpisodeRunner:
 
             while not done:
                 # Predict action / Agent 推理（随机采样）
-                self.logger.info(f"[NXY DEBUG]:[obs_data] = {[obs_data]}")
                 tmp = self.agent.predict(list_obs_data=[obs_data])
-                self.logger.info(f"[NXY DEBUG--]:tmp = {tmp}")
                 act_data = tmp[0]
                 act = self.agent.action_process(act_data)
 
@@ -136,7 +131,7 @@ class EpisodeRunner:
                 _obs_data, _remain_info = self.agent.observation_process(env_obs)
 
                 # Step reward / 每步即时奖励
-                reward = np.array(_remain_info.get("reward", [0.0]), dtype=np.float32)
+                reward = np.array([float(_remain_info.get("reward", 0.0))], dtype=np.float32)
                 total_reward += float(reward)
 
                 # Terminal reward / 终局奖励
