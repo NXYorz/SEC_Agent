@@ -129,26 +129,26 @@ class Model(nn.Module):
         """
 
         # 向量分支：按语义分别编码
-        self.hero_encoder = MLPBlock(10, 32, 32, dropout=0.05)
-        self.box_encoder = MLPBlock(6, 16, 16, dropout=0.05)
-        self.monster_encoder = MLPBlock(10, 32, 32, dropout=0.05)
-        self.mask_encoder = MLPBlock(16, 32, 32, dropout=0.00)
-        self.local_encoder = MLPBlock(16, 32, 32, dropout=0.05)
-        self.progress_encoder = MLPBlock(2, 8, 8, dropout=0.00)
+        self.hero_encoder = MLPBlock(10, 48, 48, dropout=0.05)
+        self.box_encoder = MLPBlock(6, 24, 24, dropout=0.05)
+        self.monster_encoder = MLPBlock(10, 48, 48, dropout=0.05)
+        self.mask_encoder = MLPBlock(16, 48, 48, dropout=0.00)
+        self.local_encoder = MLPBlock(16, 48, 48, dropout=0.05)
+        self.progress_encoder = MLPBlock(2, 16, 16, dropout=0.00)
 
         self.backbone = nn.Sequential(
-            nn.Linear(32 + 16 + 32 + 32 + 32 + 8, 128),
-            nn.LayerNorm(128),
+            nn.Linear(48 + 24 + 48 + 48 + 48 + 16, 192),
+            nn.LayerNorm(192),
             nn.SiLU(),
             nn.Dropout(0.10),
 
-            nn.Linear(128, 256),
-            nn.LayerNorm(256),
+            nn.Linear(192, 320),
+            nn.LayerNorm(320),
             nn.SiLU(),
             nn.Dropout(0.10),
 
-            nn.Linear(256, 256),
-            nn.LayerNorm(256),
+            nn.Linear(320, 320),
+            nn.LayerNorm(320),
             nn.SiLU(),
         )
 
@@ -171,15 +171,15 @@ class Model(nn.Module):
         # policy: 8维动作 logits
         # value : 1维状态价值
         self.policy_head = nn.Sequential(
-            nn.Linear(256, 128),
+            nn.Linear(320, 160),
             nn.SiLU(),
-            nn.Linear(128, self.ACTION_NUM)
+            nn.Linear(160, self.ACTION_NUM)
         )
 
         self.value_head = nn.Sequential(
-            nn.Linear(256, 128),
+            nn.Linear(320, 160),
             nn.SiLU(),
-            nn.Linear(128, self.VALUE_NUM)
+            nn.Linear(160, self.VALUE_NUM)
         )
 
         self._init_weights()
