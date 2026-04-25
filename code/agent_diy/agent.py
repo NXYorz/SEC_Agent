@@ -207,13 +207,32 @@ class Agent(BaseAgent):
         if (not is_danger) and box_alive and 0 <= box_dir < 8 and legal[box_dir] > 0.5:
             prob[box_dir] *= 1.8
 
-        # 强危险时，减少朝最近危险方向硬冲的概率（8方向假设）。
+        # 强危险时，基于最近怪物方向进行“规避引导”。
         if is_danger:
-            near_m1 = f[20]
-            near_m2 = f[25]
-            if min(near_m1, near_m2) < 0.18 and 0 <= box_dir < 8:
-                prob[box_dir] *= 0.55
-                prob[(box_dir + 4) % 8] *= 1.3
+            near_m1 = f[20]  # monster1 dist norm
+            near_m2 = f[25]  # monster2 dist norm
+            near_idx = 0 if near_m1 <= near_m2 else 1
+
+            mx = f[17] if near_idx == 0 else f[22]
+            mz = f[18] if near_idx == 0 else f[23]
+            mvis = f[16] if near_idx == 0 else f[21]
+            if mvis > 0.5:
+                hx, hz = f[0], f[1]
+                danger_dir = self._vector_to_dir(mx - hx, mz - hz)
+                escape_dir = (danger_dir + 4) % 8
+                if legal[danger_dir] > 0.5:
+                    prob[danger_dir] *= 0.35
+                    prob[(danger_dir + 1) % 8] *= 0.60
+                    prob[(danger_dir + 7) % 8] *= 0.60
+                if legal[escape_dir] > 0.5:
+                    base_gain = 2.20 if min(near_m1, near_m2) < 0.25 else 1.55
+                    prob[escape_dir] *= base_gain
+                    prob[(escape_dir + 1) % 8] *= 1.20
+                    prob[(escape_dir + 7) % 8] *= 1.20
+
+                # 高危时适度提高闪现逃生动作权重（对应移动方向 +8）。
+                if min(near_m1, near_m2) < 0.18 and legal[escape_dir + 8] > 0.5:
+                    prob[escape_dir + 8] *= 1.45
 
         prob = prob * legal
         s = float(prob.sum())
@@ -225,6 +244,15 @@ class Agent(BaseAgent):
             prob[valid] = 1.0 / len(valid)
             return prob
         return self._normalize_probs(prob)
+
+    def _vector_to_dir(self, dx, dz):
+        """Convert relative vector into 8-way direction index."""
+        if abs(dx) < 1e-6 and abs(dz) < 1e-6:
+            return 0
+        ang = float(np.arctan2(dz, dx))
+        # map [-pi, pi] to [0, 8)
+        idx = int(np.round(((ang + np.pi) / (2 * np.pi)) * 8.0)) % 8
+        return idx
 
     def _normalize_probs(self, probs):
         """

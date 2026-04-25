@@ -42,19 +42,32 @@ def Dis(monster , hero):
 
 #危险返回True
 def check_monsterAndHero(monster , hero , env_info):
-    if monster["hero_l2_distance"] > 0 and hero["flash_cooldown"] == 0:
+    """Danger judgement for a single monster.
+
+    统一按真实距离与怪物速度判断危险，避免依赖闪现 CD 导致误判。
+    """
+    if monster is None or len(monster) == 0:
         return False
-    if Dis(monster , hero) > 32 and hero["flash_cooldown"] == 0:
+
+    if float(monster.get("is_in_view", 1)) <= 0:
         return False
-    if Dis(monster , hero) > 64:
-        return False
-    return True
+
+    dist = float(Dis(monster, hero))
+    speed = float(monster.get("speed", 1.0))
+    flash_cd = float(hero.get("flash_cooldown", 0.0))
+
+    # 闪现不可用时，危险半径更大；怪物速度越高，危险半径越大。
+    danger_radius = 30.0 + min(10.0, speed * 2.0)
+    if flash_cd > 0:
+        danger_radius += 10.0
+
+    return dist <= danger_radius
 
 def check_monstersAndhero(monsters , hero , env_info):
     if len(monsters) == 0:
         return 0
     isDanger1 = check_monsterAndHero(monsters[0] , hero , env_info)
-    isDanger2 = True
+    isDanger2 = False
     if len(monsters) > 1:
         isDanger2 = check_monsterAndHero(monsters[1] , hero , env_info)
     if isDanger1 == True or isDanger2 == True:

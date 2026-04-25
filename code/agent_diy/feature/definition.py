@@ -54,12 +54,13 @@ MAP_SIZE = 128.0
 
 # Reward coefficients
 # 奖励权重：降低“苟活”收益，增强“找箱子并拿到箱子”的收益
-SURVIVE_REWARD = 0.10
-TREASURE_REWARD = 3.0
-BOX_APPROACH_REWARD = 0.8
-BOX_LEAVE_PENALTY = -0.2
-MONSTER_ESCAPE_REWARD = 0.2
-MONSTER_TOO_CLOSE_PENALTY = -0.4
+SURVIVE_REWARD = 0.16
+TREASURE_REWARD = 2.2
+BOX_APPROACH_REWARD = 0.35
+BOX_LEAVE_PENALTY = -0.12
+MONSTER_ESCAPE_REWARD = 0.45
+MONSTER_TOO_CLOSE_PENALTY = -0.75
+MONSTER_APPROACH_PENALTY = -0.35
 IDLE_PENALTY = -0.08
 CYCLE_PENALTY = -0.10
 EARLY_FLASH_PENALTY = -0.2
@@ -112,6 +113,8 @@ def reward_shaping(preprocessor , frame_no, hero, monsters , box , monster_feats
         reward += MONSTER_TOO_CLOSE_PENALTY
     elif cur_monst_min_dis > rs["last_min_monster_dist_norm"]:
         reward += MONSTER_ESCAPE_REWARD * (cur_monst_min_dis - rs["last_min_monster_dist_norm"])
+    elif cur_monst_min_dis < rs["last_min_monster_dist_norm"] and cur_monst_min_dis < 0.35:
+        reward += MONSTER_APPROACH_PENALTY * (rs["last_min_monster_dist_norm"] - cur_monst_min_dis)
     rs["last_min_monster_dist_norm"] = cur_monst_min_dis
 
    # 反“打转摆烂”：停滞与循环区域惩罚
