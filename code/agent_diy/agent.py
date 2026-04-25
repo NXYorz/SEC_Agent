@@ -168,6 +168,7 @@ class Agent(BaseAgent):
         """
         按概率分布采样动作。
         """
+        probs = self._normalize_probs(probs)
         if use_max:
             return int(np.argmax(probs))
         return int(np.argmax(np.random.multinomial(1, probs, size=1)))
