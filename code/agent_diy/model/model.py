@@ -74,6 +74,24 @@ class MLPBlock(nn.Module):
     def forward(self, x):
         return self.net(x)
 
+class ResidualMLPBlock(nn.Module):
+    """保持输入输出维度不变的残差 MLP Block。"""
+
+    def __init__(self, dim, hidden_dim, dropout=0.0):
+        super().__init__()
+        self.block = nn.Sequential(
+            nn.Linear(dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+            nn.SiLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, dim),
+            nn.LayerNorm(dim),
+        )
+
+    def forward(self, x):
+        return F.silu(x + self.block(x))
+
+
 class Model(nn.Module):
     """
     输入:
@@ -152,6 +170,12 @@ class Model(nn.Module):
             nn.SiLU(),
         )
 
+        # 在不改变主干输入/输出维度的前提下提升表达能力
+        self.backbone_refine = nn.Sequential(
+            ResidualMLPBlock(256, 384, dropout=0.10),
+            ResidualMLPBlock(256, 384, dropout=0.10),
+        )
+
         # 融合层
         # 图像256 + 向量128 => 256
         """
@@ -172,13 +196,17 @@ class Model(nn.Module):
         # value : 1维状态价值
         self.policy_head = nn.Sequential(
             nn.Linear(256, 128),
+            nn.LayerNorm(128),
             nn.SiLU(),
+            nn.Dropout(0.05),
             nn.Linear(128, self.ACTION_NUM)
         )
 
         self.value_head = nn.Sequential(
             nn.Linear(256, 128),
+            nn.LayerNorm(128),
             nn.SiLU(),
+            nn.Dropout(0.05),
             nn.Linear(128, self.VALUE_NUM)
         )
 
@@ -222,7 +250,8 @@ class Model(nn.Module):
             [hero_feat, box_feat, monster_feat, mask_feat, local_feat, progress_feat],
             dim=1
         )
-        return self.backbone(x)
+        x = self.backbone(x)
+        return self.backbone_refine(x)
 
     def forward(self, feature_vec, use_action_mask=True):
         """
