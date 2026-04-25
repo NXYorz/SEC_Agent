@@ -68,7 +68,8 @@ class Agent(BaseAgent):
             legal_action = list_obs_data[i].legal_action
 
             logits, value, prob = self._run_model(feature, legal_action)
-            prob = self._apply_action_heuristics(np.array(prob, dtype=np.float32), feature, legal_action)
+            # 训练阶段保持“采样分布 == 学习分布”，避免 PPO 比率失真导致难以收敛。
+            prob = self._normalize_probs(np.array(prob, dtype=np.float32))
 
             action = self._legal_sample(prob, use_max=False)
             d_action = self._legal_sample(prob, use_max=True)
@@ -88,8 +89,18 @@ class Agent(BaseAgent):
         """
         #同理，这里act_data看上去是个列表，实际上只有一个元素
         obs_data, _ = self.observation_process(env_obs)
-        act_data = self.predict([obs_data])
-        return self.action_process(act_data[0], is_stochastic=False)
+        feature = obs_data.feature
+        legal_action = obs_data.legal_action
+        _, value, prob = self._run_model(feature, legal_action)
+        prob = self._apply_action_heuristics(np.array(prob, dtype=np.float32), feature, legal_action)
+        d_action = self._legal_sample(prob, use_max=True)
+        act_data = ActData(
+            action=[d_action],
+            d_action=[d_action],
+            prob=list(prob),
+            value=value,
+        )
+        return self.action_process(act_data, is_stochastic=False)
 
 
     def learn(self, list_sample_data):

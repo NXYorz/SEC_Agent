@@ -30,16 +30,18 @@ def _to_mask8(raw):
     mask = None
     if isinstance(raw, (list, tuple, np.ndarray)):
         data = list(raw)
-        if len(data) >= 8 and all(isinstance(x, (bool, int, np.bool_, np.integer)) for x in data[:8]):
-            # bool/int mask
-            if all(int(x) in (0, 1) for x in data[:8]):
-                mask = [int(x) for x in data[:8]]
-            else:
-                # index list
-                valid = {int(x) for x in data if 0 <= int(x) < 8}
-                mask = [1 if i in valid else 0 for i in range(8)]
-        elif len(data) > 0 and isinstance(data[0], (list, tuple, np.ndarray)):
+        # nested payload
+        if len(data) > 0 and isinstance(data[0], (list, tuple, np.ndarray)):
             return _to_mask8(data[0])
+
+        if len(data) > 0 and all(isinstance(x, (bool, int, np.bool_, np.integer)) for x in data):
+            # 明确的 8 维 0/1 掩码
+            if len(data) >= 8 and all(int(x) in (0, 1) for x in data[:8]):
+                mask = [int(x) for x in data[:8]]
+            # 任意长度的方向下标列表（例如 [0,2,5]）
+            elif all(0 <= int(x) < 8 for x in data):
+                valid = {int(x) for x in data}
+                mask = [1 if i in valid else 0 for i in range(8)]
 
     if isinstance(raw, dict):
         for key in ("move_dir", "move", "move_action", "direction", "legal_move"):
@@ -53,12 +55,15 @@ def _to_mask16(raw):
     """Convert legal-action payloads to 16D mask: [move8, flash8]."""
     if isinstance(raw, (list, tuple, np.ndarray)):
         data = list(raw)
-        if (
-            len(data) >= 16
-            and all(isinstance(x, (bool, int, np.bool_, np.integer)) for x in data[:16])
-            and all(int(x) in (0, 1) for x in data[:16])
-        ):
-            return [int(x) for x in data[:16]]
+        if len(data) > 0 and all(isinstance(x, (bool, int, np.bool_, np.integer)) for x in data):
+            # 明确的 16 维 0/1 掩码
+            if len(data) >= 16 and all(int(x) in (0, 1) for x in data[:16]):
+                return [int(x) for x in data[:16]]
+
+            # 任意长度动作下标列表（例如 [0,3,8,11]）
+            if all(0 <= int(x) < 16 for x in data):
+                valid = {int(x) for x in data}
+                return [1 if i in valid else 0 for i in range(16)]
 
         if len(data) >= 2 and isinstance(data[0], (list, tuple, np.ndarray)) and isinstance(
             data[1], (list, tuple, np.ndarray)
@@ -80,11 +85,13 @@ def _to_mask16(raw):
                 break
         if move is not None or flash is not None:
             move = move if move is not None else [1] * 8
-            flash = flash if flash is not None else move.copy()
+            # flash 缺失时默认全禁用，避免被误解析为“全部可闪现”
+            flash = flash if flash is not None else [0] * 8
             return move + flash
 
     move = _to_mask8(raw)
-    return move + move.copy()
+    # 无明确 flash 信息时，默认禁用 flash，防止采样到环境非法动作导致“原地不动”。
+    return move + [0] * 8
 
 
 
@@ -187,6 +194,7 @@ class Preprocessor:
         self.reward_state = {
             "last_box_score": 0.0,
             "last_survive_score": 0.0,
+            "last_total_score": 0.0,
             "last_box_dist_norm": 1.0,
             "last_min_monster_dist_norm": 0.5,
             "last_flash_cooldown": 0.0,
@@ -284,13 +292,15 @@ class Preprocessor:
                     np.array([is_in_view, m_x_norm, m_z_norm, m_speed_norm, dist_norm], dtype=np.float32)
                 )
             else:
-                monster_feats.append(np.zeros(5, dtype=np.float32))
+                # 当怪物不存在时，距离应为“最远”（1.0），否则奖励会误判为“怪物贴脸”。
+                monster_feats.append(np.array([0.0, 0.0, 0.0, 0.0, 1.0], dtype=np.float32))
 
         # Legal action mask (16D) / 合法动作掩码
         legal_action = _to_mask16(legal_act_raw)
 
         if sum(legal_action[:8]) == 0:
-            legal_action = [1] * 16
+            # 防止“全非法 -> 全动作放开”导致频繁采样到无效闪现，改为仅放开移动动作。
+            legal_action = [1] * 8 + [0] * 8
         flash_cooldown = hero["flash_cooldown"]
         for i in range(8,16):
             if flash_cooldown > 0:
