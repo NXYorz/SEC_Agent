@@ -54,15 +54,15 @@ MAP_SIZE = 128.0
 
 # Reward coefficients
 # 奖励权重：降低“苟活”收益，增强“找箱子并拿到箱子”的收益
-SURVIVE_REWARD = 0.10
+SURVIVE_REWARD = 0.05
 TREASURE_REWARD = 3.0
 BOX_APPROACH_REWARD = 0.8
-BOX_LEAVE_PENALTY = -0.2
+BOX_LEAVE_PENALTY = -0.4
 MONSTER_ESCAPE_REWARD = 0.2
-MONSTER_TOO_CLOSE_PENALTY = -0.4
-IDLE_PENALTY = -0.12
-CYCLE_PENALTY = -0.18
-EARLY_FLASH_PENALTY = -0.2
+MONSTER_TOO_CLOSE_PENALTY = -0.6
+IDLE_PENALTY = -0.25
+CYCLE_PENALTY = -0.35
+EARLY_FLASH_PENALTY = -0.5
 
 def Dis(monster , hero):
     if len(monster) == 0:
@@ -102,12 +102,12 @@ def reward_shaping(preprocessor , frame_no, hero, monsters , box , monster_feats
         if cur_box_dist_norm < rs["last_box_dist_norm"]:
             reward += BOX_APPROACH_REWARD * (rs["last_box_dist_norm"] - cur_box_dist_norm)
         else:
-            reward += BOX_LEAVE_PENALTY * min(0.3, cur_box_dist_norm - rs["last_box_dist_norm"])
+            reward += BOX_LEAVE_PENALTY * (cur_box_dist_norm - rs["last_box_dist_norm"])
         rs["last_box_dist_norm"] = cur_box_dist_norm
 
     # 危险规避 shaping：近距离怪物时鼓励拉开，过近则直接惩罚
     cur_monst_min_dis = min(cur_monst_dist_norm1 , cur_monst_dist_norm2)
-    if cur_monst_min_dis < 0.16:
+    if cur_monst_min_dis < 0.20:
         reward += MONSTER_TOO_CLOSE_PENALTY
     elif cur_monst_min_dis > rs["last_min_monster_dist_norm"]:
         reward += MONSTER_ESCAPE_REWARD * (cur_monst_min_dis - rs["last_min_monster_dist_norm"])
@@ -125,7 +125,7 @@ def reward_shaping(preprocessor , frame_no, hero, monsters , box , monster_feats
     now_flash_cd = hero["flash_cooldown"]
     last_flash_cd = rs["last_flash_cooldown"]
     is_danger = hero_feat[8] > 0.5
-    if now_flash_cd > last_flash_cd and not is_danger and frame_no < 60:
+    if now_flash_cd > last_flash_cd and not is_danger and frame_no < 80:
         reward += EARLY_FLASH_PENALTY
     rs["last_flash_cooldown"] = now_flash_cd
 

@@ -217,36 +217,4 @@ class Agent(BaseAgent):
             prob = np.zeros_like(prob)
             prob[valid] = 1.0 / len(valid)
             return prob
-        return self._normalize_probs(prob)
-
-    def _normalize_probs(self, probs):
-        """
-        将概率向量稳定归一化到有效分布，避免 multinomial 因浮点误差报错。
-        """
-        p = np.asarray(probs, dtype=np.float64).reshape(-1)
-        if p.size == 0:
-            return p
-
-        p = np.nan_to_num(p, nan=0.0, posinf=0.0, neginf=0.0)
-        p = np.clip(p, 0.0, None)
-
-        s = float(p.sum())
-        if s <= 0.0:
-            p = np.ones_like(p, dtype=np.float64) / float(p.size)
-            return p.astype(np.float32)
-
-        p = p / s
-
-        # 再次归一，确保 float64 检查时前 n-1 项和不会因舍入超过 1。
-        p = p / float(p.sum())
-        if p.size > 1:
-            tail = 1.0 - float(p[:-1].sum(dtype=np.float64))
-            p[-1] = np.clip(tail, 0.0, 1.0)
-
-        s2 = float(p.sum(dtype=np.float64))
-        if s2 <= 0.0:
-            p = np.ones_like(p, dtype=np.float64) / float(p.size)
-        else:
-            p = p / s2
-
-        return p.astype(np.float32)
+        return prob / s
