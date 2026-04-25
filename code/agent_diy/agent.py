@@ -89,12 +89,7 @@ class Agent(BaseAgent):
         #同理，这里act_data看上去是个列表，实际上只有一个元素
         obs_data, _ = self.observation_process(env_obs)
         act_data = self.predict([obs_data])
-        stochastic = random.randint(0,1)
-        if stochastic == 1:
-            is_stochastic = True
-        else:
-            is_stochastic = False
-        return self.action_process(act_data[0], is_stochastic)
+        return self.action_process(act_data[0], is_stochastic=False)
 
 
     def learn(self, list_sample_data):
@@ -194,14 +189,19 @@ class Agent(BaseAgent):
 
         # 卡脚时，提高普通移动动作占比，并降低闪现动作占比（除非处于危险）。
         if is_stop or is_cycle:
-            prob[0:8] *= 1.35
+            prob[0:8] *= 1.20
             if not is_danger:
-                prob[8:16] *= 0.35
+                prob[8:16] *= 0.25
 
             if 0 <= self.last_action < 8:
                 opp = (self.last_action + 4) % 8
-                prob[self.last_action] *= 0.35
-                prob[opp] *= 0.35
+                 # 避免继续顶墙，同时显式鼓励反向脱困。
+                prob[self.last_action] *= 0.12
+                if legal[opp] > 0.5:
+                    prob[opp] *= 2.20
+                # 轻微提升与反向相邻的两个方向，降低“原地打转”概率。
+                prob[(opp + 1) % 8] *= 1.35
+                prob[(opp + 7) % 8] *= 1.35
 
         # 安全状态下，若有宝箱则优先朝宝箱方向移动，减少“无意义游走”。
         if (not is_danger) and box_alive and 0 <= box_dir < 8 and legal[box_dir] > 0.5:

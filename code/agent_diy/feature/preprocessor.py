@@ -108,12 +108,15 @@ class Preprocessor:
         self.step_no = 0
         self.max_step = 200
         self.last_min_monster_dist_norm = 0.5
+        self.cycleStep = 0
         self.reward_state = {
             "last_box_score": 0.0,
             "last_survive_score": 0.0,
             "last_box_dist_norm": 1.0,
             "last_min_monster_dist_norm": 0.5,
             "last_flash_cooldown": 0.0,
+            "last_is_stop": 0.0,
+            "last_is_cycle": 0.0,
         }
 
     
@@ -157,7 +160,7 @@ class Preprocessor:
             self.last_area_x = area_x
             self.last_area_z = area_z
         isCycle = 0
-        if self.cycleStep > 64:
+        if self.cycleStep > 20:
             isCycle = 1
         isDanger = check_monstersAndhero(frame_state.get("monsters", []) , hero , env_info)
         isGredy = Greddy(isDanger , frame_state.get("monsters", []) , frame_state.get("organs", []))
@@ -209,7 +212,6 @@ class Preprocessor:
                 monster_feats.append(np.zeros(5, dtype=np.float32))
 
         # Legal action mask (16D) / 合法动作掩码
-        # TODO: 检查逻辑是否正确（important）
         legal_action = [1] * 16
         if isinstance(legal_act_raw, list) and legal_act_raw:
             if isinstance(legal_act_raw[0], bool):
@@ -217,9 +219,10 @@ class Preprocessor:
                     legal_action[j] = int(legal_act_raw[j])
             else:
                 valid_set = {int(a) for a in legal_act_raw if int(a) < 8}
-                legal_action = [1 if j in valid_set else 0 for j in range(8)]
+                for j in range(8):
+                    legal_action[j] = 1 if j in valid_set else 0
 
-        if sum(legal_action) == 0:
+        if sum(legal_action[:8]) == 0:
             legal_action = [1] * 16
         flash_cooldown = hero["flash_cooldown"]
         for i in range(8,16):
@@ -253,8 +256,8 @@ class Preprocessor:
                 box_feat,
                 monster_feats[0],
                 monster_feats[1],
-                map_feat,
                 np.array(legal_action, dtype=np.float32),
+                map_feat,
                 progress_feat,
             ]
         )

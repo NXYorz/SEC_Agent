@@ -60,9 +60,10 @@ BOX_APPROACH_REWARD = 0.8
 BOX_LEAVE_PENALTY = -0.2
 MONSTER_ESCAPE_REWARD = 0.2
 MONSTER_TOO_CLOSE_PENALTY = -0.4
-IDLE_PENALTY = -0.12
-CYCLE_PENALTY = -0.18
+IDLE_PENALTY = -0.08
+CYCLE_PENALTY = -0.10
 EARLY_FLASH_PENALTY = -0.2
+UNSTUCK_REWARD = 0.0
 
 def Dis(monster , hero):
     if len(monster) == 0:
@@ -113,13 +114,20 @@ def reward_shaping(preprocessor , frame_no, hero, monsters , box , monster_feats
         reward += MONSTER_ESCAPE_REWARD * (cur_monst_min_dis - rs["last_min_monster_dist_norm"])
     rs["last_min_monster_dist_norm"] = cur_monst_min_dis
 
-    # 反“打转摆烂”：停滞与循环区域惩罚
+   # 反“打转摆烂”：停滞与循环区域惩罚
     is_stop = hero_feat[6]
     is_cycle = hero_feat[7]
     if is_stop > 0.5:
         reward += IDLE_PENALTY
     if is_cycle > 0.5:
         reward += CYCLE_PENALTY
+    # 从停滞/绕圈恢复时给予小额正反馈，帮助学习“及时换向”
+    if rs.get("last_is_stop", 0.0) > 0.5 and is_stop <= 0.5:
+        reward += UNSTUCK_REWARD
+    if rs.get("last_is_cycle", 0.0) > 0.5 and is_cycle <= 0.5:
+        reward += UNSTUCK_REWARD
+    rs["last_is_stop"] = float(is_stop)
+    rs["last_is_cycle"] = float(is_cycle)
 
     # 闪现误用惩罚：开局/非危险状态滥用闪现扣分
     now_flash_cd = hero["flash_cooldown"]
@@ -129,7 +137,7 @@ def reward_shaping(preprocessor , frame_no, hero, monsters , box , monster_feats
         reward += EARLY_FLASH_PENALTY
     rs["last_flash_cooldown"] = now_flash_cd
 
-    return reward
+    return float(np.clip(reward, -1.0, 1.5))
 
 def sample_process(list_sample_data):
     """Fill next_value and compute GAE advantage.

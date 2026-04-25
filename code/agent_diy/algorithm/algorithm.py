@@ -115,10 +115,11 @@ class Algorithm:
 
         # Policy loss (PPO Clip) / 策略损失
         one_hot = torch.nn.functional.one_hot(old_action[:, 0].long(), self.label_size).float()
-        new_prob = (one_hot * prob_dist).sum(1, keepdim=True)
+        new_prob = (one_hot * prob_dist).sum(1, keepdim=True).clamp(1e-9)
         old_action_prob = (one_hot * old_prob).sum(1, keepdim=True).clamp(1e-9)
-        ratio = new_prob / old_action_prob
+        ratio = (new_prob / old_action_prob).clamp(0.0, 10.0)
         adv = advantage.view(-1, 1)
+        adv = (adv - adv.mean()) / (adv.std(unbiased=False) + 1e-8)
         policy_loss1 = -ratio * adv
         policy_loss2 = -ratio.clamp(1 - self.clip_param, 1 + self.clip_param) * adv
         policy_loss = torch.maximum(policy_loss1, policy_loss2).mean()
@@ -148,8 +149,14 @@ class Algorithm:
         """
         合法动作掩码下的 softmax（将非法动作概率压为极小值）。
         """
-        label_max, _ = torch.max(logits * legal_action, dim=1, keepdim=True)
-        label = logits - label_max
-        label = label * legal_action
-        label = label + 1e5 * (legal_action - 1)
-        return torch.nn.functional.softmax(label, dim=1)
+        legal_action = (legal_action > 0.5).float()
+        masked_logits = logits.masked_fill(legal_action < 0.5, -1e9)
+        probs = torch.nn.functional.softmax(masked_logits, dim=1)
+
+        # 如果某一行意外全非法，退化为均匀分布，防止 NaN。
+        row_sum = probs.sum(dim=1, keepdim=True)
+        bad_row = row_sum < 1e-8
+        if bad_row.any():
+            uniform = torch.full_like(probs, 1.0 / probs.size(1))
+            probs = torch.where(bad_row, uniform, probs)
+        return probs
