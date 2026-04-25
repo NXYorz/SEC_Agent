@@ -51,6 +51,8 @@ def check_monsterAndHero(monster , hero , env_info):
     return True
 
 def check_monstersAndhero(monsters , hero , env_info):
+    if len(monsters) == 0:
+        return 0
     isDanger1 = check_monsterAndHero(monsters[0] , hero , env_info)
     isDanger2 = True
     if len(monsters) > 1:
@@ -61,6 +63,8 @@ def check_monstersAndhero(monsters , hero , env_info):
 
 def Greddy(isDanger , monsters , organs):
     if isDanger == 0:
+        return 1
+    if len(monsters) == 0:
         return 1
     if len(organs) == 0:
         return 0
@@ -76,6 +80,8 @@ def Greddy(isDanger , monsters , organs):
     return 0
 
 def check_box(box , monsters):
+    if len(monsters) == 0:
+        return 0
     box_x , box_z = get_area(box["pos"]["x"] , box["pos"]["z"])
     monster1_x , monster1_z = get_area(monsters[0]["pos"]["x"] , monsters[0]["pos"]["z"])
     monster2_x = box_x
@@ -102,6 +108,13 @@ class Preprocessor:
         self.step_no = 0
         self.max_step = 200
         self.last_min_monster_dist_norm = 0.5
+        self.reward_state = {
+            "last_box_score": 0.0,
+            "last_survive_score": 0.0,
+            "last_box_dist_norm": 1.0,
+            "last_min_monster_dist_norm": 0.5,
+            "last_flash_cooldown": 0.0,
+        }
 
     
 
