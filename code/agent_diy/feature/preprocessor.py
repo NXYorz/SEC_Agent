@@ -153,8 +153,9 @@ class Preprocessor:
         hero_pos = hero["pos"]
         hero_x_norm = _norm(hero_pos["x"], MAP_SIZE)
         hero_z_norm = _norm(hero_pos["z"], MAP_SIZE)
-        # 1 表示可用，0 表示冷却中
-        flash_ready = 1 if float(hero.get("flash_cooldown", 0.0)) <= 0 else 0
+        flash_ready = 0
+        if hero["flash_cooldown"] > 0:
+            flash_ready = 1
         buff_remain_norm = _norm(env_info["buff_refresh_time"], MAX_BUFF_DURATION)
         score = env_info["total_score"]
         frame_id = env_info["step_no"]
@@ -224,8 +225,24 @@ class Preprocessor:
                 monster_feats.append(np.zeros(5, dtype=np.float32))
 
         # Legal action mask (16D) / 合法动作掩码
-        # 按协议严格使用16维：前8维移动，后8维对应方向闪现
-        legal_action = self._parse_legal_action(legal_act_raw, hero.get("flash_cooldown", 0.0), last_action)
+        legal_action = [1] * 16
+        if isinstance(legal_act_raw, list) and legal_act_raw:
+            if isinstance(legal_act_raw[0], bool):
+                for j in range(min(8, len(legal_act_raw))):
+                    legal_action[j] = int(legal_act_raw[j])
+            else:
+                valid_set = {int(a) for a in legal_act_raw if int(a) < 8}
+                for j in range(8):
+                    legal_action[j] = 1 if j in valid_set else 0
+
+        if sum(legal_action[:8]) == 0:
+            legal_action = [1] * 16
+        flash_cooldown = hero["flash_cooldown"]
+        for i in range(8,16):
+            if flash_cooldown > 0:
+                legal_action[i] = 0
+            else:
+                legal_action[i] = legal_action[i - 8]
 
         # Local map features (16D) / 局部地图特征
         map_feat = np.zeros(16, dtype=np.float32)
@@ -262,33 +279,3 @@ class Preprocessor:
         frame_no = env_info["step_no"]
         reward = reward_shaping(self , frame_no, hero, monsters , box , monster_feats, hero_feat , env_info)
         return feature, legal_action, reward
-
-    def _parse_legal_action(self, legal_act_raw, flash_cooldown, last_action):
-        """Strict legal action parser (must be 16-dim).
-
-        协议约定：
-        - legal_action[0:8]  : 八方向移动是否合法
-        - legal_action[8:16] : 对应方向闪现是否合法
-        """
-        legal = np.ones(16, dtype=np.float32)
-        arr = np.asarray(legal_act_raw, dtype=np.float32).reshape(-1)
-        if arr.size == 16:
-            legal = (arr > 0.5).astype(np.float32)
-
-        # 闪现冷却中时，后8维强制为0（即便输入给了1）
-        if float(flash_cooldown) > 0:
-            legal[8:16] = 0.0
-
-        # 若移动动作意外全 0，优先给“反向脱困”方向，避免直接退化为全1顶墙。
-        if legal[:8].sum() <= 0.5:
-            legal[:8] = 0.0
-            if 0 <= int(last_action) < 8:
-                opp = (int(last_action) + 4) % 8
-                legal[opp] = 1.0
-                legal[(opp + 1) % 8] = 1.0
-                legal[(opp + 7) % 8] = 1.0
-            else:
-                legal[:8] = 1.0
-            legal[8:16] = 0.0 if float(flash_cooldown) > 0 else legal[8:16]
-
-        return legal.tolist()

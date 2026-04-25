@@ -33,7 +33,6 @@ class Agent(BaseAgent):
         self.algorithm = Algorithm(self.model, self.optimizer, self.device, logger, monitor)
         self.preprocessor = Preprocessor()
         self.last_action = -1
-        self.stuck_frames = 0
         self.logger = logger
         self.monitor = monitor
         super().__init__(agent_type, device, logger, monitor)
@@ -129,7 +128,6 @@ class Agent(BaseAgent):
         """
         self.preprocessor.reset()
         self.last_action = -1
-        self.stuck_frames = 0
 
     def _run_model(self, feature, legal_action):
         """
@@ -189,43 +187,21 @@ class Agent(BaseAgent):
         box_alive = f[10] > 0.5
         box_dir = int(f[11]) if f[11] >= 0 else -1
 
-        self.stuck_frames = self.stuck_frames + 1 if is_stop else 0
-
-        # 绝不重复采样非法的“上一动作”
-        if 0 <= self.last_action < len(prob) and legal[self.last_action] < 0.5:
-            prob[self.last_action] = 0.0
-
         # 卡脚时，提高普通移动动作占比，并降低闪现动作占比（除非处于危险）。
         if is_stop or is_cycle:
-            prob[0:8] *= 1.30
+            prob[0:8] *= 1.20
             if not is_danger:
-                prob[8:16] *= 0.15
+                prob[8:16] *= 0.25
 
-            last_move_dir = self.last_action if 0 <= self.last_action < 8 else (self.last_action - 8 if 8 <= self.last_action < 16 else -1)
-            if 0 <= last_move_dir < 8:
-                opp = (last_move_dir + 4) % 8
+            if 0 <= self.last_action < 8:
+                opp = (self.last_action + 4) % 8
                  # 避免继续顶墙，同时显式鼓励反向脱困。
-                if 0 <= self.last_action < len(prob):
-                    prob[self.last_action] *= 0.05
-                prob[last_move_dir] *= 0.08
+                prob[self.last_action] *= 0.12
                 if legal[opp] > 0.5:
-                    prob[opp] *= 2.40
+                    prob[opp] *= 2.20
                 # 轻微提升与反向相邻的两个方向，降低“原地打转”概率。
-                if legal[(opp + 1) % 8] > 0.5:
-                    prob[(opp + 1) % 8] *= 1.50
-                if legal[(opp + 7) % 8] > 0.5:
-                    prob[(opp + 7) % 8] *= 1.50
-
-                # 连续卡住时，引入“转向序列”强制探索可行转角，避免持续顶墙。
-                if self.stuck_frames >= 2:
-                    rotate_candidates = [
-                        (last_move_dir + 2) % 8, (last_move_dir + 6) % 8,
-                        (last_move_dir + 3) % 8, (last_move_dir + 5) % 8,
-                        opp,
-                    ]
-                    for rank, cand in enumerate(rotate_candidates):
-                        if legal[cand] > 0.5:
-                            prob[cand] *= (2.10 - 0.22 * rank)
+                prob[(opp + 1) % 8] *= 1.35
+                prob[(opp + 7) % 8] *= 1.35
 
         # 安全状态下，若有宝箱则优先朝宝箱方向移动，减少“无意义游走”。
         if (not is_danger) and box_alive and 0 <= box_dir < 8 and legal[box_dir] > 0.5:
