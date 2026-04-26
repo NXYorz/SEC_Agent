@@ -112,13 +112,16 @@ def reward_shaping(preprocessor , frame_no, hero, monsters , box , monster_feats
     rs["last_total_score"] = cur_total_score
 
     # 宝箱距离 shaping：接近加分，远离扣分（修复原先符号方向）
-    if len(box) != 0:
+    if len(box) != 0 and float(box.get("status", 0)) > 0:
         cur_box_dist_norm = _norm(Dis(box , hero) , MAP_SIZE * 1.41)
         if cur_box_dist_norm < rs["last_box_dist_norm"]:
             reward += BOX_APPROACH_REWARD * (rs["last_box_dist_norm"] - cur_box_dist_norm)
         else:
             reward += BOX_LEAVE_PENALTY * (cur_box_dist_norm - rs["last_box_dist_norm"])
         rs["last_box_dist_norm"] = cur_box_dist_norm
+    else:
+        # 无有效宝箱目标时重置距离基线，避免对“伪目标点”持续 shaping。
+        rs["last_box_dist_norm"] = 1.0
 
     # 危险规避 shaping：近距离怪物时鼓励拉开，过近则直接惩罚
     if cur_monst_min_dis < 0.20:

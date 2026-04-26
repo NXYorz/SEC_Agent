@@ -166,15 +166,33 @@ def check_box(box , monsters):
         return 0
     box_x , box_z = get_area(box["pos"]["x"] , box["pos"]["z"])
     monster1_x , monster1_z = get_area(monsters[0]["pos"]["x"] , monsters[0]["pos"]["z"])
-    monster2_x = box_x
-    monster2_z = box_z
+    monster2_x = None
+    monster2_z = None
     if len(monsters) > 1:
         monster2_x , monster2_z = get_area(monsters[1]["pos"]["x"] , monsters[1]["pos"]["z"])
     if box_x == monster1_x and box_z == monster1_z:
         return 1
-    if box_x == monster2_x and box_z == monster2_z:
+    if monster2_x is not None and box_x == monster2_x and box_z == monster2_z:
         return 1
     return 0
+
+
+def _select_valid_box(organs, monsters):
+    """Select a valid treasure organ.
+
+    过滤掉与怪物同格（尤其是第二只怪物出生点）的伪“宝箱”目标。
+    """
+    for organ in organs:
+        if not isinstance(organ, dict):
+            continue
+        if float(organ.get("status", 0)) <= 0:
+            continue
+        if "pos" not in organ or "hero_relative_direction" not in organ:
+            continue
+        if check_box(organ, monsters) == 1:
+            continue
+        return organ
+    return []
 
 class Preprocessor:
     def __init__(self):
@@ -218,6 +236,8 @@ class Preprocessor:
         self.step_no = observation["step_no"]
         self.max_step = env_info.get("max_step", 200)
 
+        monsters = frame_state.get("monsters", [])
+
         # Hero self features (10D) / 英雄自身特征
         hero = frame_state["heroes"]
         hero_pos = hero["pos"]
@@ -245,8 +265,8 @@ class Preprocessor:
         isCycle = 0
         if self.cycleStep > 8:
             isCycle = 1
-        isDanger = check_monstersAndhero(frame_state.get("monsters", []) , hero , env_info)
-        isGredy = Greddy(isDanger , frame_state.get("monsters", []) , frame_state.get("organs", []))
+        isDanger = check_monstersAndhero(monsters , hero , env_info)
+        isGredy = Greddy(isDanger , monsters , frame_state.get("organs", []))
         hero_feat = np.array([hero_x_norm, hero_z_norm, flash_ready, buff_remain_norm , score , frame_id , isStop , isCycle, isDanger , isGredy], dtype=np.float32)
 
         #宝箱特征 6D
@@ -258,17 +278,17 @@ class Preprocessor:
         box_z = 0
         box = []
         if len(frame_state.get("organs", [])) > 0:
-            box = frame_state.get("organs", [])[0]
+            box = _select_valid_box(frame_state.get("organs", []), monsters)
+        if len(box) > 0:
             isEffect = box["status"]
             direction = box["hero_relative_direction"]
             dis = _norm(Dis(box , hero), MAP_SIZE * 1.41)
-            isBoxDanger = check_box(box , frame_state.get("monsters", []))
+            isBoxDanger = check_box(box , monsters)
             box_x = _norm(box["pos"]["x"], MAP_SIZE)
             box_z = _norm(box["pos"]["z"], MAP_SIZE)
         box_feat = np.array([isEffect , direction , dis , isBoxDanger , box_x , box_z] , dtype=np.float32)
 
         # Monster features (5D x 2) / 怪物特征
-        monsters = frame_state.get("monsters", [])
         monster_feats = []
         for i in range(2):
             if i < len(monsters):
