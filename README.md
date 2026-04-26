@@ -29,3 +29,46 @@ Reccord iterator Log in this repositories
 ### 严重问题！！！
 
 发现智能体每一次（无一列外）都是在第二个怪物的出生点打转（原地转圈），直到第二个怪物出现直接抓住智能体结束游戏，怀疑是reward有问题，或者是特征处理时有问题，可能是误把第二个怪物出生点当作宝箱点之类的，需要着重检查
+
+下面是 observation 的真实样貌:
+```
+{
+'step_no': 2,
+'frame_state': {
+'heroes': {
+'buff_remaining_time': 0,
+'flash_cooldown': 99,
+'hero_id': 13,
+'pos': {'x': 59, 'z': 93},
+'step_score': 3,
+'treasure_collected_count': 0,
+'treasure_score': 0
+},
+'monsters': [
+{'hero_l2_distance': 0, 'hero_relative_direction': 8, 'monster_id': 14, 'monster_interval': 300, 'pos': {'x': -1, 'z': -1}, 'speed': -1, 'is_in_view': 0}
+],
+'organs': []
+},
+'env_info': {
+'buff_refresh_time': 200,
+'flash_cooldown_max': 100,
+'flash_count': 1,
+'max_step': 1000,
+'monster_init_speed': 1,
+'monster_interval': 300,
+'monster_speed_boost_step': 500,
+'pos': {'x': 59, 'z': 93},
+'step_no': 2,
+'step_score': 3,
+'total_buff': 2,
+'total_score': 3,
+'total_treasure': 10,
+'treasure_id': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+'treasure_score': 0,
+'treasures_collected': 0,
+'collected_buff': 0
+},
+'map_info':[[1,1,1,1,1,1,1,1,1,1,1,1......]......]
+'legal_action': [True, True, True, True, True, True, True, True, False, False, False, False, False, False, False, False]
+}
+```
