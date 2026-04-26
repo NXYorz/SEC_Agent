@@ -60,3 +60,5 @@ class Config:
     CLIP_PARAM = 0.2
     VF_COEF = 1.0
     GRAD_CLIP_RANGE = 0.5
+    # PPO 每批样本的重复优化轮次；过小会导致 policy_loss 长期贴近 0 难以更新。
+    PPO_EPOCHS = 4
