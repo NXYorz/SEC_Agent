@@ -20,6 +20,7 @@ import os
 import time
 
 import torch
+import torch.nn.functional as F
 from agent_diy.conf.conf import Config
 
 
@@ -110,19 +111,30 @@ class Algorithm:
         """
         计算标准 PPO 损失（策略损失 + 价值损失 + 熵正则化）。
         """
-        # Masked softmax / 合法动作掩码 softmax
-        prob_dist = self._masked_softmax(logits, legal_action)
+        # Masked logits / 合法动作掩码后的 logits
+        masked_logits = self._masked_logits(logits, legal_action)
+        log_prob_dist = F.log_softmax(masked_logits, dim=1)
+        prob_dist = log_prob_dist.exp()
 
         # Policy loss (PPO Clip) / 策略损失
-        one_hot = torch.nn.functional.one_hot(old_action[:, 0].long(), self.label_size).float()
-        new_prob = (one_hot * prob_dist).sum(1, keepdim=True).clamp(1e-9)
-        old_action_prob = (one_hot * old_prob).sum(1, keepdim=True).clamp(1e-9)
-        ratio = (new_prob / old_action_prob).clamp(0.0, 10.0)
+        one_hot = F.one_hot(old_action[:, 0].long(), self.label_size).float()
+        new_log_prob = (one_hot * log_prob_dist).sum(1, keepdim=True)
+        # 行为策略概率有时会非常接近 0（数值噪声/掩码边界），
+        # 直接参与 ratio 会让 policy_loss 大幅抖动，这里提高下界抑制尖峰梯度。
+        old_action_prob = (one_hot * old_prob).sum(1, keepdim=True).clamp(1e-5)
+        old_log_prob = old_action_prob.log()
+        ratio = (new_log_prob - old_log_prob).exp().clamp(0.0, 10.0)
         adv = advantage.view(-1, 1)
-        adv = (adv - adv.mean()) / (adv.std(unbiased=False) + 1e-8)
-        policy_loss1 = -ratio * adv
-        policy_loss2 = -ratio.clamp(1 - self.clip_param, 1 + self.clip_param) * adv
-        policy_loss = torch.maximum(policy_loss1, policy_loss2).mean()
+        adv_std = adv.std(unbiased=False)
+        if float(adv_std) > 1e-3:
+            adv = (adv - adv.mean()) / (adv_std + 1e-8)
+        else:
+            # 小方差 batch 不做标准化，避免噪声被 1/std 放大。
+            adv = adv - adv.mean()
+        adv = adv.clamp(-5.0, 5.0)
+        policy_loss1 = ratio * adv
+        policy_loss2 = ratio.clamp(1 - self.clip_param, 1 + self.clip_param) * adv
+        policy_loss = -torch.minimum(policy_loss1, policy_loss2).mean()
 
         # Value loss (Clipped) / 价值损失
         vp = value_pred
@@ -145,18 +157,19 @@ class Algorithm:
 
         return total_loss, [value_loss, policy_loss, entropy_loss]
 
-    def _masked_softmax(self, logits, legal_action):
+    def _masked_logits(self, logits, legal_action):
         """
-        合法动作掩码下的 softmax（将非法动作概率压为极小值）。
+        合法动作掩码下的 logits（将非法动作置为极小值）。
         """
         legal_action = (legal_action > 0.5).float()
-        masked_logits = logits.masked_fill(legal_action < 0.5, -1e9)
-        probs = torch.nn.functional.softmax(masked_logits, dim=1)
+        masked_logits = logits.masked_fill(legal_action < 0.5, -1e10)
 
-        # 如果某一行意外全非法，退化为均匀分布，防止 NaN。
-        row_sum = probs.sum(dim=1, keepdim=True)
-        bad_row = row_sum < 1e-8
+        # 若某行全非法，则只放开前 8 个普通移动动作，避免训练中梯度落在无效动作上。
+        valid_count = legal_action.sum(dim=1, keepdim=True)
+        bad_row = valid_count < 0.5
         if bad_row.any():
-            uniform = torch.full_like(probs, 1.0 / probs.size(1))
-            probs = torch.where(bad_row, uniform, probs)
-        return probs
+            fallback_mask = torch.zeros_like(legal_action)
+            fallback_mask[:, : min(8, fallback_mask.size(1))] = 1.0
+            legal_action = torch.where(bad_row, fallback_mask, legal_action)
+            masked_logits = logits.masked_fill(legal_action < 0.5, -1e10)
+        return masked_logits
