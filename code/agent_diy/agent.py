@@ -201,6 +201,22 @@ class Agent(BaseAgent):
         box_alive = f[10] > 0.5
         box_dir = int(f[11]) if f[11] >= 0 else -1
 
+        # map_info 衍生特征: 邻格可走性 + 通路深度，用于路线优化
+        map_next = f[42:50]   # 每个方向下一格是否可通行
+        map_depth = f[50:58]  # 每个方向在局部视野内可连续前进深度(0~1)
+
+        # 先做一层通行约束引导：
+        # - 邻格阻塞动作降权，减少“撞墙/贴边抖动”
+        # - 深通路动作增权，优先选择更开阔路线
+        for d in range(8):
+            if legal[d] <= 0.5:
+                continue
+            if map_next[d] <= 0.5:
+                prob[d] *= 0.08
+                prob[d + 8] *= 0.20
+            else:
+                prob[d] *= (0.70 + 0.90 * float(map_depth[d]))
+
         # 常规巡航期抑制“折线游走”：轻微延续上一步方向，减少无意义急转。
         if (not is_danger) and (not is_stop) and (not is_cycle) and 0 <= self.last_action < 8:
             last_dir = self.last_action
@@ -229,6 +245,15 @@ class Agent(BaseAgent):
                 # 轻微提升与反向相邻的两个方向，降低“原地打转”概率。
                 prob[(opp + 1) % 8] *= 2.00 if is_stop else 1.60
                 prob[(opp + 7) % 8] *= 2.00 if is_stop else 1.60
+
+            # 结合局部地图，优先选择“可走且通路更深”的脱困方向。
+            legal_move = legal[:8] > 0.5
+            open_score = np.where(legal_move, map_next * (0.5 + map_depth), -1.0)
+            best_dir = int(np.argmax(open_score)) if np.max(open_score) > 0 else -1
+            if best_dir >= 0:
+                prob[best_dir] *= 2.60 if is_stop else 1.80
+                prob[(best_dir + 1) % 8] *= 1.18
+                prob[(best_dir + 7) % 8] *= 1.18
 
         # 安全状态下，若有宝箱则优先朝宝箱方向移动，减少“无意义游走”。
         if (not is_danger) and box_alive and 0 <= box_dir < 8 and legal[box_dir] > 0.5:

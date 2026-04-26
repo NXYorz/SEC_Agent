@@ -329,17 +329,45 @@ class Preprocessor:
                 legal_action[i] = legal_action[i - 8]
 
         # Local map features (16D) / 局部地图特征
+        # 前 8 维: 8 个方向的“下一格是否可通行”
+        # 后 8 维: 8 个方向的“视野内通路深度(0~1)”
         map_feat = np.zeros(16, dtype=np.float32)
-        if map_info is not None and len(map_info) >= 13:
-            center = len(map_info) // 2
-            flat_idx = 0
-            for row in range(center - 2, center + 2):
-                for col in range(center - 2, center + 2):
-                    if 0 <= row < len(map_info) and 0 <= col < len(map_info[0]):
-                        map_feat[flat_idx] = float(map_info[row][col] != 0)
-                    flat_idx += 1
+        if map_info is not None and len(map_info) > 0 and len(map_info[0]) > 0:
+            rows = len(map_info)
+            cols = len(map_info[0])
+            c_row = rows // 2
+            c_col = cols // 2
+            max_depth = max(1, min(6, c_row, c_col, rows - 1 - c_row, cols - 1 - c_col))
 
-        
+            # 与动作/方向编码对齐: 0~7 => E,SE,S,SW,W,NW,N,NE
+            dir_offsets = [
+                (0, 1),
+                (1, 1),
+                (1, 0),
+                (1, -1),
+                (0, -1),
+                (-1, -1),
+                (-1, 0),
+                (-1, 1),
+            ]
+
+            for d, (dr, dc) in enumerate(dir_offsets):
+                first_r, first_c = c_row + dr, c_col + dc
+                first_ok = 0.0
+                if 0 <= first_r < rows and 0 <= first_c < cols:
+                    first_ok = 1.0 if int(map_info[first_r][first_c]) != 0 else 0.0
+                map_feat[d] = first_ok
+
+                depth = 0
+                for k in range(1, max_depth + 1):
+                    nr, nc = c_row + dr * k, c_col + dc * k
+                    if not (0 <= nr < rows and 0 <= nc < cols):
+                        break
+                    if int(map_info[nr][nc]) == 0:
+                        break
+                    depth += 1
+                map_feat[8 + d] = float(depth) / float(max_depth)
+
 
         # Progress features (2D) / 进度特征
         step_norm = _norm(self.step_no, self.max_step)
