@@ -54,18 +54,18 @@ MAP_SIZE = 128.0
 
 # Reward coefficients
 # 奖励权重：降低“苟活”收益，增强“找箱子并拿到箱子”的收益
-SURVIVE_REWARD = 0.16
-TREASURE_REWARD = 2.2
-BOX_APPROACH_REWARD = 0.35
-BOX_LEAVE_PENALTY = -0.12
+SURVIVE_REWARD = 0.08
+TREASURE_REWARD = 3.2
+BOX_APPROACH_REWARD = 0.55
+BOX_LEAVE_PENALTY = -0.18
 MONSTER_ESCAPE_REWARD = 0.45
 MONSTER_TOO_CLOSE_PENALTY = -0.75
 MONSTER_APPROACH_PENALTY = -0.35
-IDLE_PENALTY = -0.16
-CYCLE_PENALTY = -0.10
+IDLE_PENALTY = -0.22
+CYCLE_PENALTY = -0.18
 EARLY_FLASH_PENALTY = -0.2
 UNSTUCK_REWARD = 0.0
-SCORE_GAIN_REWARD = 0.06
+SCORE_GAIN_REWARD = 0.10
 
 def Dis(monster , hero):
     if len(monster) == 0:
@@ -152,7 +152,7 @@ def reward_shaping(preprocessor , frame_no, hero, monsters , box , monster_feats
         reward += EARLY_FLASH_PENALTY
     rs["last_flash_cooldown"] = now_flash_cd
 
-    return float(np.clip(reward, -1.0, 1.5))
+    return float(np.clip(reward, -1.2, 2.0))
 
 def sample_process(list_sample_data):
     """Fill next_value and compute GAE advantage.

@@ -147,33 +147,34 @@ class Model(nn.Module):
         """
 
         # 向量分支：按语义分别编码
-        self.hero_encoder = MLPBlock(10, 32, 32, dropout=0.05)
-        self.box_encoder = MLPBlock(6, 16, 16, dropout=0.05)
-        self.monster_encoder = MLPBlock(10, 32, 32, dropout=0.05)
-        self.mask_encoder = MLPBlock(16, 32, 32, dropout=0.00)
-        self.local_encoder = MLPBlock(16, 32, 32, dropout=0.05)
-        self.progress_encoder = MLPBlock(2, 8, 8, dropout=0.00)
+        self.hero_encoder = MLPBlock(10, 64, 64, dropout=0.05)
+        self.box_encoder = MLPBlock(6, 32, 32, dropout=0.05)
+        self.monster_encoder = MLPBlock(10, 64, 64, dropout=0.05)
+        self.mask_encoder = MLPBlock(16, 48, 48, dropout=0.00)
+        self.local_encoder = MLPBlock(16, 48, 48, dropout=0.05)
+        self.progress_encoder = MLPBlock(2, 16, 16, dropout=0.00)
 
         self.backbone = nn.Sequential(
-            nn.Linear(32 + 16 + 32 + 32 + 32 + 8, 128),
-            nn.LayerNorm(128),
-            nn.SiLU(),
-            nn.Dropout(0.10),
-
-            nn.Linear(128, 256),
+            nn.Linear(64 + 32 + 64 + 48 + 48 + 16, 256),
             nn.LayerNorm(256),
             nn.SiLU(),
             nn.Dropout(0.10),
 
-            nn.Linear(256, 256),
-            nn.LayerNorm(256),
+            nn.Linear(256, 384),
+            nn.LayerNorm(384),
+            nn.SiLU(),
+            nn.Dropout(0.10),
+
+            nn.Linear(384, 384),
+            nn.LayerNorm(384),
             nn.SiLU(),
         )
 
         # 在不改变主干输入/输出维度的前提下提升表达能力
         self.backbone_refine = nn.Sequential(
-            ResidualMLPBlock(256, 384, dropout=0.10),
-            ResidualMLPBlock(256, 384, dropout=0.10),
+            ResidualMLPBlock(384, 512, dropout=0.10),
+            ResidualMLPBlock(384, 512, dropout=0.10),
+            ResidualMLPBlock(384, 512, dropout=0.10),
         )
 
         # 融合层
@@ -195,19 +196,19 @@ class Model(nn.Module):
         # policy: 8维动作 logits
         # value : 1维状态价值
         self.policy_head = nn.Sequential(
-            nn.Linear(256, 128),
-            nn.LayerNorm(128),
+            nn.Linear(384, 192),
+            nn.LayerNorm(192),
             nn.SiLU(),
             nn.Dropout(0.05),
-            nn.Linear(128, self.ACTION_NUM)
+            nn.Linear(192, self.ACTION_NUM)
         )
 
         self.value_head = nn.Sequential(
-            nn.Linear(256, 128),
-            nn.LayerNorm(128),
+            nn.Linear(384, 192),
+            nn.LayerNorm(192),
             nn.SiLU(),
             nn.Dropout(0.05),
-            nn.Linear(128, self.VALUE_NUM)
+            nn.Linear(192, self.VALUE_NUM)
         )
 
         self._init_weights()

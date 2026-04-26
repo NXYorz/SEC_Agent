@@ -60,5 +60,13 @@ class Config:
     CLIP_PARAM = 0.2
     VF_COEF = 1.0
     GRAD_CLIP_RANGE = 0.5
-    # PPO 每批样本的重复优化轮次；过小会导致 policy_loss 长期贴近 0 难以更新。
-    PPO_EPOCHS = 4
+    # PPO 每批样本的重复优化轮次。
+    # 说明：
+    # - 生产/消耗比偏高时，优先降低该值以提升 learner 吞吐。
+    # - 当前默认从 4 下调到 2，通常可明显降低训练侧耗时。
+    PPO_EPOCHS = 2
+    # 前期策略未稳定时允许稍高迭代轮次，后续自动回落到 PPO_EPOCHS。
+    PPO_EPOCHS_WARMUP = 3
+    PPO_WARMUP_STEPS = 200
+    # 大 batch 时再降一档，避免 learner 成为瓶颈。
+    PPO_LARGE_BATCH_SIZE = 1024
