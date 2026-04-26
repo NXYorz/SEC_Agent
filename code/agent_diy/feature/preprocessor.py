@@ -106,6 +106,24 @@ def _norm(v, v_max, v_min=0.0):
 def get_area(x , z):
     return (int)(x / 8) , (int)(z / 8)
 
+def _dir_to_8(raw_dir):
+    """Normalize env direction id into [0, 7].
+
+    兼容常见编码：
+    - 0~7: 直接使用
+    - 1~8: 转成 0~7
+    其它值返回 -1（无效方向）。
+    """
+    try:
+        d = int(raw_dir)
+    except (TypeError, ValueError):
+        return -1
+    if 0 <= d <= 7:
+        return d
+    if 1 <= d <= 8:
+        return d - 1
+    return -1
+
 def Dis(monster , hero):
     return np.sqrt((monster["pos"]["x"] - hero["pos"]["x"]) ** 2 + (monster["pos"]["z"] - hero["pos"]["z"]) ** 2)
 
@@ -251,7 +269,7 @@ class Preprocessor:
 
         #宝箱特征 6D
         isEffect = 0
-        direction = 0
+        direction = -1
         dis = 0
         isBoxDanger = 0
         box_x = 0
@@ -260,7 +278,7 @@ class Preprocessor:
         if len(frame_state.get("organs", [])) > 0:
             box = frame_state.get("organs", [])[0]
             isEffect = box["status"]
-            direction = box["hero_relative_direction"]
+            direction = _dir_to_8(box.get("hero_relative_direction", -1))
             dis = _norm(Dis(box , hero), MAP_SIZE * 1.41)
             isBoxDanger = check_box(box , frame_state.get("monsters", []))
             box_x = _norm(box["pos"]["x"], MAP_SIZE)

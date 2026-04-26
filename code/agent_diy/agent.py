@@ -69,7 +69,10 @@ class Agent(BaseAgent):
 
             logits, value, prob = self._run_model(feature, legal_action)
             # 训练阶段保持“采样分布 == 学习分布”，避免 PPO 比率失真导致难以收敛。
-            prob = self._normalize_probs(np.array(prob, dtype=np.float32))
+            prob = self._apply_action_heuristics(
+                np.array(prob, dtype=np.float32), feature, legal_action
+            )
+            prob = self._normalize_probs(prob)
 
             action = self._legal_sample(prob, use_max=False)
             d_action = self._legal_sample(prob, use_max=True)
@@ -202,21 +205,23 @@ class Agent(BaseAgent):
         if is_stop or is_cycle:
             prob[0:8] *= 1.35
             if not is_danger:
-                prob[8:16] *= 0.15
+                prob[8:16] *= 0.08
 
             if 0 <= self.last_action < 8:
                 opp = (self.last_action + 4) % 8
                 # 避免继续顶墙，同时显式鼓励反向脱困。
                 prob[self.last_action] *= 0.02 if is_stop else 0.10
                 if legal[opp] > 0.5:
-                    prob[opp] *= 3.20 if is_stop else 2.30
+                    prob[opp] *= 4.00 if is_stop else 2.80
                 # 轻微提升与反向相邻的两个方向，降低“原地打转”概率。
-                prob[(opp + 1) % 8] *= 1.85 if is_stop else 1.45
-                prob[(opp + 7) % 8] *= 1.85 if is_stop else 1.45
+                prob[(opp + 1) % 8] *= 2.00 if is_stop else 1.60
+                prob[(opp + 7) % 8] *= 2.00 if is_stop else 1.60
 
         # 安全状态下，若有宝箱则优先朝宝箱方向移动，减少“无意义游走”。
         if (not is_danger) and box_alive and 0 <= box_dir < 8 and legal[box_dir] > 0.5:
-            prob[box_dir] *= 1.8
+            prob[box_dir] *= 2.4
+            prob[(box_dir + 1) % 8] *= 1.15
+            prob[(box_dir + 7) % 8] *= 1.15
 
         # 强危险时，基于最近怪物方向进行“规避引导”。
         if is_danger:
