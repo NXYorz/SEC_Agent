@@ -42,6 +42,23 @@ class Algorithm:
         self.last_report_monitor_time = 0
         self.train_step = 0
 
+    def _resolve_ppo_epochs(self, batch_size):
+        """Choose PPO epochs with throughput-aware scheduling.
+
+        为了降低样本生产/消耗比，按训练阶段和 batch 大小动态调节迭代轮次：
+        - 冷启动期：使用 warmup 轮次，帮助策略尽快摆脱随机行为。
+        - 大 batch：下调一档，优先保证 learner 吞吐。
+        """
+        base_epochs = int(getattr(Config, "PPO_EPOCHS", 2))
+        warmup_epochs = int(getattr(Config, "PPO_EPOCHS_WARMUP", base_epochs))
+        warmup_steps = int(getattr(Config, "PPO_WARMUP_STEPS", 0))
+        large_batch = int(getattr(Config, "PPO_LARGE_BATCH_SIZE", 1024))
+
+        epochs = warmup_epochs if self.train_step < warmup_steps else base_epochs
+        if int(batch_size) >= large_batch:
+            epochs = max(1, epochs - 1)
+        return max(1, epochs)
+
     def learn(self, list_sample_data):
         """
         训练入口：对一批 SampleData 执行 PPO 更新。
@@ -56,8 +73,7 @@ class Algorithm:
         reward_sum = torch.stack([f.rewards for f in list_sample_data]).to(self.device)
 
         self.model.set_train_mode()
-        ppo_epochs = int(getattr(Config, "PPO_EPOCHS", 4))
-        ppo_epochs = max(1, ppo_epochs)
+        ppo_epochs = self._resolve_ppo_epochs(len(list_sample_data))
 
         total_loss = None
         info_list = None
@@ -91,6 +107,7 @@ class Algorithm:
                 "policy_objective": round(info_list[2].item(), 4),
                 "entropy_loss": round(info_list[3].item(), 4),
                 "reward": round(reward.mean().item(), 4),
+                "ppo_epochs": int(ppo_epochs),
             }
             self.logger.info(
                 f"[train] total_loss:{results['total_loss']} "
