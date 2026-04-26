@@ -201,6 +201,19 @@ class Agent(BaseAgent):
         box_alive = f[10] > 0.5
         box_dir = int(f[11]) if f[11] >= 0 else -1
 
+        # 常规巡航期抑制“折线游走”：轻微延续上一步方向，减少无意义急转。
+        if (not is_danger) and (not is_stop) and (not is_cycle) and 0 <= self.last_action < 8:
+            last_dir = self.last_action
+            if legal[last_dir] > 0.5:
+                prob[last_dir] *= 1.25
+            # 大角度拐弯（±3、反向）在安全期降权，避免蛇形/折线路径拖慢逃生。
+            prob[(last_dir + 3) % 8] *= 0.78
+            prob[(last_dir + 5) % 8] *= 0.78
+            prob[(last_dir + 4) % 8] *= 0.70
+
+            # 非危险期默认压低闪现偏好，避免“无效位移”干扰路径学习。
+            prob[8:16] *= 0.45
+
         # 卡脚时，提高普通移动动作占比，并降低闪现动作占比（除非处于危险）。
         if is_stop or is_cycle:
             prob[0:8] *= 1.35

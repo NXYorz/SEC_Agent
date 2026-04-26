@@ -118,10 +118,12 @@ def _dir_to_8(raw_dir):
         d = int(raw_dir)
     except (TypeError, ValueError):
         return -1
-    if 0 <= d <= 7:
-        return d
+    # 线上观测里 hero_relative_direction 常见为 1~8，
+    # 需优先按 1-based 转换，否则会把 1~7 误当作 0~6。
     if 1 <= d <= 8:
         return d - 1
+    if 0 <= d <= 7:
+        return d
     return -1
 
 def Dis(monster , hero):
