@@ -4,7 +4,7 @@
 # Copyright © 1998 - 2026 Tencent. All Rights Reserved.
 ###########################################################################
 """
-Author: Tencent AI Arena Authors
+Author: NXY
 """
 
 from kaiwudrl.common.utils.train_test_utils import run_train_test
@@ -13,7 +13,7 @@ from kaiwudrl.common.utils.train_test_utils import run_train_test
 # Simply modify the value of the algorithm_name variable.
 # 运行train_test前必须修改这里的算法名字, 必须是 algorithm_name_list 里的一个, 修改algorithm_name的值即可
 algorithm_name_list = ["ppo", "diy"]
-algorithm_name = "ppo"
+algorithm_name = "diy"
 
 
 if __name__ == "__main__":
@@ -21,9 +21,9 @@ if __name__ == "__main__":
         algorithm_name=algorithm_name,
         algorithm_name_list=algorithm_name_list,
         env_vars={
-            "replay_buffer_capacity": "10",
+            "replay_buffer_capacity": "50000",
             "preload_ratio": "0.2",
-            "train_batch_size": "2",
-            "dump_model_freq": "1",
+            "train_batch_size": "4096",
+            "dump_model_freq": "200",
         },
     )

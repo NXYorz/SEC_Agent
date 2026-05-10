@@ -1,3 +1,79 @@
-### A project in school
+### Introduction
 
-Iterator Log in this repositories
+Reccord iterator Log in this repositories
+
+### 文档说明
+
+目前整个流程大概是系统提供一个 observation 的字典，字典里面有我们想要的信息，比如 ```observation["step_no"]``` 表示当前步数，```observation["frame_state"]``` 表示当前帧状态数据，这也是一个字典，在这个字典里有一个 key 为 heroes 表示英雄状态，通过这个英雄状态可以访问英雄的位置等信息，比如 ```observation["frame_state"]["heroes"]["pos"]["x"]``` 代表英雄的 x 坐标，当然这只是一个例子，更详细的信息可以在[官方文档](https://tencentarena.com/docs/p-competition-gorge_chase/15.0.1/guidebook/dev-guide/protocol/)里面查看，但是这里有一个问题就是，这个官方文档提供的 Key 有一些并不存在，然后有一些 Key 存在，但是官方没有提供，完整的 Key-Value 可以在 [这里](https://tencentarena.com/p/v5/community/channel/12/board/32/post/802) 查看。
+
+
+我们需要做的就是通过系统环境提供给我们的这个 observation 来提取一些我们需要的信息，然后按照整个流程进行训练，这个训练流程大概是这样的:
+
+
+- 智能体加载最新模型，通过这个最新模型来完成一局游戏
+
+- 从环境获取数据，但是这个数据格式无法直接作为我们智能体的输入，所以我们要对这个数据进行**特征处理**，在这里我们规定把智能体预测的输入包装为 ```ObsData```，将智能体的预测输出包装为 ```ActData```，特征处理要做的事情就是把从环境获取的 observation 转化为 ObsData，顺带处理一些奖励函数需要的信息(也可以没有)，特征处理这个过程定义在 feature_process() 这个函数里面，文件路径为 ```/code/agent_diy/feature/preprocessor.py```，ObsData 和 ActData 的定义在 ```/code/agent_diy/featrue/definition.py```
+
+- 将处理好的特征输入给智能体，智能体就会对下一步的决策进行预测，预测函数的逻辑写在 ```/code/agent_diy/agent.py/predict()``` 里面，其返回值类型正是 ActData，它包含了智能体对下一步的决策，然后智能体调用 ```action_process()``` 函数来解包 ActData 得到决策方案，然后将决策方案返回给环境完成交互。
+
+- 上述的这个过程我们暂且称它为 "一帧"，整场游戏由若干帧组成，游戏结束后我们就得到了每一帧的信息，从而可以从上帝视角进行一个复盘，我们智能体内部的模型就可以通过每一帧的信息来进行学习，让模型变得更聪明，因此对于每一帧，我们可以收集一些信息，供智能体复盘使用，我们把每一帧收集的信息称为 SampleData，它的定义和 ObsData，ActData 在同一个文件夹下面。举个例子，在我们的项目中，我们的 SampleData 有以下信息：obs（当前帧的环境信息），legal_actions（当前可以朝哪些方向移动），actions（当前帧的决策是什么，即朝哪里移动），reward（当前的奖励分数，这个奖励分数是我们自己定义的，目的是告诉智能体它的决策正确与否，一般来说，它的决策越正确，奖励分数越高，因此我们的任务就是想办法告诉智能体什么决策是对的（比如远离怪物，吃宝箱），什么决策是错的），dones（当前游戏是否结束）等等
+
+- 游戏结束后，我们就得到了若干帧，我们可以把这些帧传给智能体，智能体通过 learn() 函数传给算法，算法调用模型进行梯度训练，模型文件在 ```/code/agent_diy/model/model.py```，算法文件在 ```/code/agent_diy/algorithm/Algorithm.py``` 路径下，模型我让 GPT 写了一个 CNN 模型，算法我用的官方提供的 PPO 算法，都没有怎么修改，大家如果有想法可以大胆尝试。  
+
+目前 ```/code/agent_diy``` 是可以正常训练了，我简单的训练了一个小时进行了一下测试，目前有一个问题就是我们的智能体不喜欢吃宝箱，喜欢苟，妄图通过苟活获得步数奖励。但是它还苟的非常简单：和怪物拉开一定距离后在远离打转摆烂，怀疑宝箱奖励给的太低，生存奖励给的太高导致的？；还有一个问题是我们的智能体非常喜欢开局交闪现，怀疑是闪现奖励给的太高了。大家可以从这几个角度作为切入点，奖励函数在 ```/code/agent_diy/featrue/definition.py``` 下面
+
+代码中，合法动作掩码我设置为16维，前8维代表对应方向是否可以移动，后8维代表对应方向是否可以闪现，我怀疑问题出现在这里，需要着重检查和修改
+
+当前的问题：训练效果达不到预期，智能体总是喜欢原地打转，或者是撞到地图边缘后依旧不懂得拐弯，一直卡在那里，直到被怪物抓住，游戏结束。
+
+### 严重问题！！！
+
+发现智能体每一次（无一列外）都是在第二个怪物的出生点打转（原地转圈），直到第二个怪物出现直接抓住智能体结束游戏，怀疑是reward有问题，或者是特征处理时有问题，可能是误把第二个怪物出生点当作宝箱点之类的，需要着重检查
+
+（已解决，第二个怪物出生的逻辑是在智能体十步之前的位置，因此如果一直不动或者打转，那么就直接死，所以当前的问题还是智能体会突然原地打转，以及滥用闪现的问题)
+
+--------
+
+
+下面是 observation 的真实样貌:
+```
+{
+'step_no': 2,
+'frame_state': {
+'heroes': {
+'buff_remaining_time': 0,
+'flash_cooldown': 99,
+'hero_id': 13,
+'pos': {'x': 59, 'z': 93},
+'step_score': 3,
+'treasure_collected_count': 0,
+'treasure_score': 0
+},
+'monsters': [
+{'hero_l2_distance': 0, 'hero_relative_direction': 8, 'monster_id': 14, 'monster_interval': 300, 'pos': {'x': -1, 'z': -1}, 'speed': -1, 'is_in_view': 0}
+],
+'organs': []
+},
+'env_info': {
+'buff_refresh_time': 200,
+'flash_cooldown_max': 100,
+'flash_count': 1,
+'max_step': 1000,
+'monster_init_speed': 1,
+'monster_interval': 300,
+'monster_speed_boost_step': 500,
+'pos': {'x': 59, 'z': 93},
+'step_no': 2,
+'step_score': 3,
+'total_buff': 2,
+'total_score': 3,
+'total_treasure': 10,
+'treasure_id': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+'treasure_score': 0,
+'treasures_collected': 0,
+'collected_buff': 0
+},
+'map_info':[[1,1,1,1,1,1,1,1,1,1,1,1......]......]
+'legal_action': [True, True, True, True, True, True, True, True, False, False, False, False, False, False, False, False]
+}
+```
